@@ -15,36 +15,6 @@ window.addEventListener("DOMContentLoaded", () => {
     bottomPanel.style.height = `${100 - parseFloat(topHeightPercent)}%`;
   }
 
-  // === Double click collapse/expand ===
-  let leftCollapsed = false;
-  let bottomCollapsed = false;
-  let lastLeftWidth = leftPanel.offsetWidth;
-  let lastTopHeightPercent = parseFloat(topPanel.style.height) || 50;
-
-  verticalSplitter.addEventListener("dblclick", () => {
-    if (!leftCollapsed) {
-      lastLeftWidth = leftPanel.offsetWidth;
-      leftPanel.style.width = "0px";
-    } else {
-      leftPanel.style.width = `${lastLeftWidth}px`;
-    }
-    leftCollapsed = !leftCollapsed;
-    localStorage.setItem("leftPanelWidth", leftPanel.style.width);
-  });
-
-  horizontalSplitter.addEventListener("dblclick", () => {
-    if (!bottomCollapsed) {
-      lastTopHeightPercent = parseFloat(topPanel.style.height);
-      topPanel.style.height = "100%";
-      bottomPanel.style.height = "0%";
-    } else {
-      topPanel.style.height = `${lastTopHeightPercent}%`;
-      bottomPanel.style.height = `${100 - lastTopHeightPercent}%`;
-    }
-    bottomCollapsed = !bottomCollapsed;
-    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
-  });
-
   // === Vertical splitter drag ===
   let draggingV = false;
   const minLeft = 50;
@@ -69,25 +39,54 @@ window.addEventListener("DOMContentLoaded", () => {
   let draggingH = false;
   const minHeight = 50;
 
-  horizontalSplitter.addEventListener("mousedown", () => {
+  horizontalSplitter.addEventListener("mousedown", (e) => {
     draggingH = true;
     document.body.style.userSelect = "none";
+
+    // полностью скрываем верхнюю панель
+    topPanel.style.height = "0%";
+    bottomPanel.style.height = "100%";
+    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
+
   document.addEventListener("mousemove", (e) => {
     if (!draggingH) return;
+
     const rect = topPanel.parentElement.getBoundingClientRect();
-    let offsetY = Math.max(
-      minHeight,
-      Math.min(e.clientY - rect.top, rect.height - minHeight)
-    );
-    const topPercent = (offsetY / rect.height) * 100;
-    topPanel.style.height = `${topPercent}%`;
-    bottomPanel.style.height = `${100 - topPercent}%`;
-    localStorage.setItem("topPanelHeightPercent", `${topPercent}%`);
+    let offsetY = e.clientY - rect.top;
+
+    // минимум и максимум для bottom panel
+    offsetY = Math.max(0, Math.min(offsetY, rect.height));
+
+    if (offsetY < 10) {
+      // полностью скрыть top panel
+      topPanel.style.height = "0%";
+      bottomPanel.style.height = "100%";
+    } else {
+      // растягиваем top panel обратно, если тянем вниз
+      const topPercent = (offsetY / rect.height) * 100;
+      topPanel.style.height = `${topPercent}%`;
+      bottomPanel.style.height = `${100 - topPercent}%`;
+    }
+
+    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
+
   document.addEventListener("mouseup", () => {
     draggingH = false;
     document.body.style.userSelect = "auto";
+  });
+
+  // === Double click horizontal splitter для возврата Top panel на 50% ===
+  horizontalSplitter.addEventListener("dblclick", () => {
+    if (parseFloat(topPanel.style.height) === 0) {
+      topPanel.style.height = "50%";
+      bottomPanel.style.height = "50%";
+    } else {
+      topPanel.style.height = "0%";
+      bottomPanel.style.height = "100%";
+    }
+    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
 
   // === Mobile support ===
@@ -98,6 +97,9 @@ window.addEventListener("DOMContentLoaded", () => {
   horizontalSplitter.addEventListener("touchstart", (e) => {
     draggingH = true;
     e.preventDefault();
+    topPanel.style.height = "0%";
+    bottomPanel.style.height = "100%";
+    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
 
   document.addEventListener("touchmove", (e) => {
@@ -110,13 +112,20 @@ window.addEventListener("DOMContentLoaded", () => {
     if (draggingH) {
       const rect = topPanel.parentElement.getBoundingClientRect();
       let offsetY = Math.max(
-        minHeight,
-        Math.min(touch.clientY - rect.top, rect.height - minHeight)
+        0,
+        Math.min(touch.clientY - rect.top, rect.height)
       );
-      const topPercent = (offsetY / rect.height) * 100;
-      topPanel.style.height = `${topPercent}%`;
-      bottomPanel.style.height = `${100 - topPercent}%`;
-      localStorage.setItem("topPanelHeightPercent", `${topPercent}%`);
+
+      if (offsetY < 10) {
+        topPanel.style.height = "0%";
+        bottomPanel.style.height = "100%";
+      } else {
+        const topPercent = (offsetY / rect.height) * 100;
+        topPanel.style.height = `${topPercent}%`;
+        bottomPanel.style.height = `${100 - topPercent}%`;
+      }
+
+      localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
     }
   });
 

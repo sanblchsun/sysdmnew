@@ -21,6 +21,7 @@
   width: 5px;
   cursor: col-resize;
   background-color: #444;
+  z-index: 10;
 }
 
 /* Правая область */
@@ -34,7 +35,7 @@
 /* Верхняя панель */
 #top-right {
   height: 50%;
-  min-height: 50px;
+  min-height: 0px;
   background-color: #252526;
   color: #fff;
   overflow: auto;
@@ -43,9 +44,29 @@
 
 /* Горизонтальный разделитель */
 .splitter.horizontal {
-  height: 5px;
+  height: 2px; /* увеличиваем для удобства drag */
   cursor: row-resize;
-  background-color: #444;
+  background-color: transparent; /* сам разделитель прозрачный */
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+/* Ручка - всегда видна, выделяется цветом */
+.splitter.horizontal::before {
+  content: "";
+  width: 60px; /* длина ручки */
+  height: 20px; /* толщина */
+  background-color: #ff9800; /* яркая, заметная */
+  border-radius: 3px;
+  z-index: 11;
+}
+
+/* Hover эффект */
+.splitter.horizontal:hover::before {
+  background-color: #ffc107;
 }
 
 /* Нижняя панель */
@@ -61,4 +82,18 @@
 /* Контент */
 .panel-content {
   padding: 0.5rem;
+}
+
+/* Mobile адаптивность */
+@media (max-width: 768px) {
+  .splitter.horizontal {
+    height: 24px;
+  }
+  .splitter.horizontal::before {
+    width: 80px;
+    height: 8px;
+  }
+  .splitter.vertical {
+    width: 8px;
+  }
 }
