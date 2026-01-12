@@ -1,0 +1,32 @@
+{% extends "base.html" %} {% block body %}
+<div id="container">
+  <div
+    id="left-panel"
+    hx-get="/ui/left-menu"
+    hx-trigger="load"
+    hx-target="this"
+  ></div>
+
+  <div id="vertical-splitter" class="splitter vertical"></div>
+
+  <div id="right-container">
+    <div
+      id="top-right"
+      hx-get="/ui/top-panel"
+      hx-trigger="load"
+      hx-target="this"
+    ></div>
+
+    <div id="horizontal-splitter" class="splitter horizontal"></div>
+
+    <div
+      id="bottom-right"
+      hx-get="/ui/bottom-panel"
+      hx-trigger="load"
+      hx-target="this"
+    ></div>
+  </div>
+</div>
+
+<script src="/static/splitter.js"></script>
+{% endblock %}

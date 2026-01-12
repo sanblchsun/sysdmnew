@@ -1,0 +1,11 @@
+<div class="panel-content">
+  <h2>Top panel</h2>
+  <p>Основная рабочая область</p>
+
+  {% if request.query_params.get("view") == "details" %}
+  <div style="margin-top: 1rem">
+    <strong>Details view</strong>
+    <p>Загружено через HTMX без перезагрузки страницы</p>
+  </div>
+  {% endif %}
+</div>
