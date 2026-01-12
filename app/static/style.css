@@ -58,7 +58,7 @@
 .splitter.horizontal::before {
   content: "";
   width: 60px; /* длина ручки */
-  height: 20px; /* толщина */
+  height: 30px; /* толщина */
   background-color: #ff9800; /* яркая, заметная */
   border-radius: 3px;
   z-index: 11;
@@ -72,7 +72,7 @@
 /* Нижняя панель */
 #bottom-right {
   height: 50%;
-  min-height: 50px;
+  min-height: 10px;
   background-color: #2d2d2d;
   color: #fff;
   overflow: auto;

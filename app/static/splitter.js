@@ -37,13 +37,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
   // === Horizontal splitter drag ===
   let draggingH = false;
-  const minHeight = 50;
 
-  horizontalSplitter.addEventListener("mousedown", (e) => {
+  horizontalSplitter.addEventListener("mousedown", () => {
     draggingH = true;
     document.body.style.userSelect = "none";
 
-    // полностью скрываем верхнюю панель
+    // при начале drag полностью скрываем top panel
     topPanel.style.height = "0%";
     bottomPanel.style.height = "100%";
     localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
@@ -55,15 +54,11 @@ window.addEventListener("DOMContentLoaded", () => {
     const rect = topPanel.parentElement.getBoundingClientRect();
     let offsetY = e.clientY - rect.top;
 
-    // минимум и максимум для bottom panel
-    offsetY = Math.max(0, Math.min(offsetY, rect.height));
-
+    // если тянем в верхнюю часть контейнера — top panel скрыта
     if (offsetY < 10) {
-      // полностью скрыть top panel
       topPanel.style.height = "0%";
       bottomPanel.style.height = "100%";
     } else {
-      // растягиваем top panel обратно, если тянем вниз
       const topPercent = (offsetY / rect.height) * 100;
       topPanel.style.height = `${topPercent}%`;
       bottomPanel.style.height = `${100 - topPercent}%`;
@@ -77,7 +72,7 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.style.userSelect = "auto";
   });
 
-  // === Double click horizontal splitter для возврата Top panel на 50% ===
+  // === Double click horizontal splitter: вернуть top panel на 50% ===
   horizontalSplitter.addEventListener("dblclick", () => {
     if (parseFloat(topPanel.style.height) === 0) {
       topPanel.style.height = "50%";
@@ -89,7 +84,7 @@ window.addEventListener("DOMContentLoaded", () => {
     localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
 
-  // === Mobile support ===
+  // === Touch events для mobile ===
   verticalSplitter.addEventListener("touchstart", (e) => {
     draggingV = true;
     e.preventDefault();
@@ -104,11 +99,16 @@ window.addEventListener("DOMContentLoaded", () => {
 
   document.addEventListener("touchmove", (e) => {
     const touch = e.touches[0];
+
     if (draggingV) {
-      let newWidth = Math.max(minLeft, Math.min(touch.clientX, maxLeft));
+      let newWidth = Math.max(
+        50,
+        Math.min(touch.clientX, window.innerWidth - 50)
+      );
       leftPanel.style.width = `${newWidth}px`;
       localStorage.setItem("leftPanelWidth", `${newWidth}px`);
     }
+
     if (draggingH) {
       const rect = topPanel.parentElement.getBoundingClientRect();
       let offsetY = Math.max(
