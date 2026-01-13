@@ -134,3 +134,69 @@ window.addEventListener("DOMContentLoaded", () => {
     draggingH = false;
   });
 });
+
+// для дерева в левом окне
+
+const STORAGE_KEY = "tree-nodes";
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  return raw ? JSON.parse(raw) : {};
+}
+
+function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function toggle(el) {
+  const next = el.nextElementSibling;
+  if (!next) return;
+
+  next.classList.toggle("expanded");
+
+  const arrow = el.querySelector(".arrow");
+  if (arrow) arrow.classList.toggle("expanded-arrow");
+
+  const id = next.dataset.id;
+  if (id) {
+    const state = loadState();
+    state[id] = next.classList.contains("expanded");
+    saveState(state);
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  const state = loadState();
+  const lists = document.querySelectorAll("#tree-root ul.collapsible");
+  lists.forEach((ul) => {
+    const id = ul.dataset.id;
+    if (id && state[id]) {
+      ul.classList.add("expanded");
+      const arrow = ul.previousElementSibling.querySelector(".arrow");
+      if (arrow) arrow.classList.add("expanded-arrow");
+    }
+  });
+});
+
+let allExpanded = false;
+function toggleAll() {
+  const lists = document.querySelectorAll("#tree-root ul.collapsible");
+  const state = loadState();
+  lists.forEach((ul) => {
+    const arrow = ul.previousElementSibling.querySelector(".arrow");
+    if (allExpanded) {
+      ul.classList.remove("expanded");
+      if (arrow) arrow.classList.remove("expanded-arrow");
+      if (ul.dataset.id) state[ul.dataset.id] = false;
+    } else {
+      ul.classList.add("expanded");
+      if (arrow) arrow.classList.add("expanded-arrow");
+      if (ul.dataset.id) state[ul.dataset.id] = true;
+    }
+  });
+  saveState(state);
+  allExpanded = !allExpanded;
+  document.getElementById("toggle-all-btn").textContent = allExpanded
+    ? "Свернуть всё"
+    : "Развернуть всё";
+}

@@ -1,9 +1,27 @@
 <nav>
-  <ul>
-    <li><a hx-get="/ui/top-panel" hx-target="#top-right">Dashboard</a></li>
-    <li>
-      <a hx-get="/ui/top-panel?view=details" hx-target="#top-right">Details</a>
-    </li>
-    <li><a hx-get="/ui/bottom-panel" hx-target="#bottom-right">Logs</a></li>
+  <h2>Company Tree</h2>
+
+  <button id="toggle-all-btn" onclick="toggleAll()">Развернуть всё</button>
+
+  {% macro render_node(node) %}
+  <li>
+    {% if node.children %}
+    <span class="node" onclick="toggle(this)">
+      <span class="arrow">▶</span> {{ node.name }}
+    </span>
+    <ul class="collapsible" data-id="{{ node.id }}">
+      {% for child in node.children %} {{ render_node(child) }} {% endfor %}
+    </ul>
+    {% else %}
+    <span class="node leaf">
+      {% if node.type == "agent" %} 👤 {{ node.name }} {% else %} {{ node.name
+      }} {% endif %}
+    </span>
+    {% endif %}
+  </li>
+  {% endmacro %}
+
+  <ul id="tree-root">
+    {% for company in companies %} {{ render_node(company) }} {% endfor %}
   </ul>
 </nav>

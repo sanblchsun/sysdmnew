@@ -97,3 +97,35 @@
     width: 8px;
   }
 }
+
+/* для дерева в левом окне */
+
+ul {
+  list-style: none;
+  padding-left: 20px;
+  margin: 0;
+}
+.node {
+  cursor: pointer;
+  font-weight: bold;
+  user-select: none;
+  display: flex;
+  align-items: center;
+}
+.arrow {
+  display: inline-block;
+  width: 1em;
+  transition: transform 0.3s ease;
+  margin-right: 5px;
+}
+.expanded-arrow {
+  transform: rotate(90deg);
+}
+.collapsible {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s ease;
+}
+.expanded {
+  max-height: 2000px;
+}

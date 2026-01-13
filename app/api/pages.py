@@ -1,16 +1,20 @@
 # app/api/pages.py
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
+from app.repositories.tree import get_tree
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Request, Depends
+from app.database import get_db
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/ui/left-menu")
-async def left_menu(request: Request):
+async def tree(request: Request, session: AsyncSession = Depends(get_db)):
+    companies = await get_tree(session)
     return templates.TemplateResponse(
-        "partials/left_menu.html",
-        {"request": request},
+        "partials/left_menu.html", {"request": request, "companies": companies}
     )
 
 
