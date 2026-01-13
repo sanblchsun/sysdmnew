@@ -86,7 +86,7 @@ body {
 /* Нижняя панель */
 #bottom-right {
   height: 50%;
-  min-height: 10px;
+  min-height: 0px;
   background-color: #2d2d2d;
   color: #fff;
   overflow: auto;

@@ -5,66 +5,92 @@ window.addEventListener("DOMContentLoaded", () => {
   const verticalSplitter = document.getElementById("vertical-splitter");
   const horizontalSplitter = document.getElementById("horizontal-splitter");
 
-  // === Restore positions from localStorage ===
-  const leftWidth = localStorage.getItem("leftPanelWidth");
-  const topHeightPercent = localStorage.getItem("topPanelHeightPercent");
-
-  if (leftWidth) leftPanel.style.width = leftWidth;
-  if (topHeightPercent) {
-    topPanel.style.height = topHeightPercent;
-    bottomPanel.style.height = `${100 - parseFloat(topHeightPercent)}%`;
+  if (
+    !leftPanel ||
+    !topPanel ||
+    !bottomPanel ||
+    !verticalSplitter ||
+    !horizontalSplitter
+  ) {
+    console.warn("Splitter init aborted: missing DOM elements");
+    return;
   }
 
-  // === Vertical splitter drag ===
+  /* =======================
+     Restore saved positions
+     ======================= */
+  const savedLeftWidth = localStorage.getItem("leftPanelWidth");
+  const savedTopPercent = localStorage.getItem("topPanelHeightPercent");
+
+  if (savedLeftWidth) {
+    leftPanel.style.width = savedLeftWidth;
+  }
+
+  if (savedTopPercent !== null) {
+    const topPercent = parseFloat(savedTopPercent);
+    topPanel.style.height = `${topPercent}%`;
+    bottomPanel.style.height = `${100 - topPercent}%`;
+  }
+
+  /* =======================
+     Vertical splitter
+     ======================= */
   let draggingV = false;
-  const minLeft = 50;
-  const maxLeft = window.innerWidth - 50;
 
   verticalSplitter.addEventListener("mousedown", () => {
     draggingV = true;
     document.body.style.userSelect = "none";
   });
+
   document.addEventListener("mousemove", (e) => {
     if (!draggingV) return;
-    let newWidth = Math.max(minLeft, Math.min(e.clientX, maxLeft));
-    leftPanel.style.width = `${newWidth}px`;
-    localStorage.setItem("leftPanelWidth", `${newWidth}px`);
+
+    const min = 50;
+    const max = window.innerWidth - 50;
+    const width = Math.max(min, Math.min(e.clientX, max));
+
+    leftPanel.style.width = `${width}px`;
+    localStorage.setItem("leftPanelWidth", `${width}px`);
   });
+
   document.addEventListener("mouseup", () => {
     draggingV = false;
     document.body.style.userSelect = "auto";
   });
 
-  // === Horizontal splitter drag ===
+  /* =======================
+     Horizontal splitter
+     ======================= */
   let draggingH = false;
+  let dragStartedH = false;
+  let startY = 0;
 
-  horizontalSplitter.addEventListener("mousedown", () => {
+  horizontalSplitter.addEventListener("mousedown", (e) => {
     draggingH = true;
+    dragStartedH = false;
+    startY = e.clientY;
     document.body.style.userSelect = "none";
-
-    // при начале drag полностью скрываем top panel
-    topPanel.style.height = "0%";
-    bottomPanel.style.height = "100%";
-    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
 
   document.addEventListener("mousemove", (e) => {
     if (!draggingH) return;
 
-    const rect = topPanel.parentElement.getBoundingClientRect();
-    let offsetY = e.clientY - rect.top;
-
-    // если тянем в верхнюю часть контейнера — top panel скрыта
-    if (offsetY < 10) {
-      topPanel.style.height = "0%";
-      bottomPanel.style.height = "100%";
-    } else {
-      const topPercent = (offsetY / rect.height) * 100;
-      topPanel.style.height = `${topPercent}%`;
-      bottomPanel.style.height = `${100 - topPercent}%`;
+    if (Math.abs(e.clientY - startY) > 3) {
+      dragStartedH = true;
     }
 
-    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
+    const container = topPanel.parentElement;
+    const rect = container.getBoundingClientRect();
+
+    let offsetY = e.clientY - rect.top;
+    offsetY = Math.max(0, Math.min(offsetY, rect.height));
+
+    const percent = (offsetY / rect.height) * 100;
+
+    topPanel.style.height = `${percent}%`;
+    bottomPanel.style.height = `${100 - percent}%`;
+
+    localStorage.setItem("topPanelHeightPercent", percent.toFixed(2));
   });
 
   document.addEventListener("mouseup", () => {
@@ -72,60 +98,63 @@ window.addEventListener("DOMContentLoaded", () => {
     document.body.style.userSelect = "auto";
   });
 
-  // === Double click horizontal splitter: вернуть top panel на 50% ===
+  /* =======================
+     Double click toggle
+     ======================= */
   horizontalSplitter.addEventListener("dblclick", () => {
-    if (parseFloat(topPanel.style.height) === 0) {
+    const current = parseFloat(topPanel.style.height || "0");
+
+    if (current === 0) {
       topPanel.style.height = "50%";
       bottomPanel.style.height = "50%";
+      localStorage.setItem("topPanelHeightPercent", "50");
     } else {
       topPanel.style.height = "0%";
       bottomPanel.style.height = "100%";
+      localStorage.setItem("topPanelHeightPercent", "0");
     }
-    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
 
-  // === Touch events для mobile ===
+  /* =======================
+     Touch support (mobile)
+     ======================= */
   verticalSplitter.addEventListener("touchstart", (e) => {
     draggingV = true;
     e.preventDefault();
   });
+
   horizontalSplitter.addEventListener("touchstart", (e) => {
     draggingH = true;
+    dragStartedH = false;
+    startY = e.touches[0].clientY;
     e.preventDefault();
-    topPanel.style.height = "0%";
-    bottomPanel.style.height = "100%";
-    localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
   });
 
   document.addEventListener("touchmove", (e) => {
     const touch = e.touches[0];
 
     if (draggingV) {
-      let newWidth = Math.max(
-        50,
-        Math.min(touch.clientX, window.innerWidth - 50)
-      );
-      leftPanel.style.width = `${newWidth}px`;
-      localStorage.setItem("leftPanelWidth", `${newWidth}px`);
+      const min = 50;
+      const max = window.innerWidth - 50;
+      const width = Math.max(min, Math.min(touch.clientX, max));
+
+      leftPanel.style.width = `${width}px`;
+      localStorage.setItem("leftPanelWidth", `${width}px`);
     }
 
     if (draggingH) {
-      const rect = topPanel.parentElement.getBoundingClientRect();
-      let offsetY = Math.max(
-        0,
-        Math.min(touch.clientY - rect.top, rect.height)
-      );
+      const container = topPanel.parentElement;
+      const rect = container.getBoundingClientRect();
 
-      if (offsetY < 10) {
-        topPanel.style.height = "0%";
-        bottomPanel.style.height = "100%";
-      } else {
-        const topPercent = (offsetY / rect.height) * 100;
-        topPanel.style.height = `${topPercent}%`;
-        bottomPanel.style.height = `${100 - topPercent}%`;
-      }
+      let offsetY = touch.clientY - rect.top;
+      offsetY = Math.max(0, Math.min(offsetY, rect.height));
 
-      localStorage.setItem("topPanelHeightPercent", topPanel.style.height);
+      const percent = (offsetY / rect.height) * 100;
+
+      topPanel.style.height = `${percent}%`;
+      bottomPanel.style.height = `${100 - percent}%`;
+
+      localStorage.setItem("topPanelHeightPercent", percent.toFixed(2));
     }
   });
 
