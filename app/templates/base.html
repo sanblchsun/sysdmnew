@@ -1,14 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>{% block title %}UI{% endblock %}</title>
+  <head>
+    <meta charset="UTF-8" />
+    <title>{% block title %}UI{% endblock %}</title>
 
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="/static/splitter.js"></script>
 
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  {% block body %}{% endblock %}
-</body>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    {% block body %}{% endblock %}
+    <script src="/static/tree.js"></script>
+  </body>
 </html>
