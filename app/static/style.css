@@ -105,27 +105,34 @@ ul {
   padding-left: 20px;
   margin: 0;
 }
+
 .node {
-  cursor: pointer;
-  font-weight: bold;
-  user-select: none;
   display: flex;
   align-items: center;
+  user-select: none;
 }
+
 .arrow {
-  display: inline-block;
+  cursor: pointer;
   width: 1em;
-  transition: transform 0.3s ease;
-  margin-right: 5px;
+  margin-right: 6px;
+  transition: transform 0.2s ease;
 }
-.expanded-arrow {
+
+.arrow.expanded {
   transform: rotate(90deg);
 }
+
+.label {
+  cursor: default;
+}
+
 .collapsible {
   overflow: hidden;
   max-height: 0;
-  transition: max-height 0.3s ease;
+  transition: max-height 0.25s ease;
 }
-.expanded {
+
+.collapsible.expanded {
   max-height: 2000px;
 }

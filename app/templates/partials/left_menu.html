@@ -6,17 +6,23 @@
   {% macro render_node(node) %}
   <li>
     {% if node.children %}
-    <span class="node" onclick="toggle(this)">
-      <span class="arrow">▶</span> {{ node.name }}
-    </span>
+    <div class="node">
+      <span class="arrow" onclick="toggleNode('{{ node.id }}', this)">▶</span>
+
+      <span class="label">{{ node.name }}</span>
+    </div>
+
     <ul class="collapsible" data-id="{{ node.id }}">
       {% for child in node.children %} {{ render_node(child) }} {% endfor %}
     </ul>
     {% else %}
-    <span class="node leaf">
-      {% if node.type == "agent" %} 👤 {{ node.name }} {% else %} {{ node.name
-      }} {% endif %}
-    </span>
+    <div class="node">
+      <span style="width: 1em"></span>
+      <span class="label">
+        {% if node.type == "agent" %} 👤 {{ node.name }} {% else %} {{ node.name
+        }} {% endif %}
+      </span>
+    </div>
     {% endif %}
   </li>
   {% endmacro %}

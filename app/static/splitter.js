@@ -137,7 +137,9 @@ window.addEventListener("DOMContentLoaded", () => {
 
 // для дерева в левом окне
 
-const STORAGE_KEY = "tree-nodes";
+const STORAGE_KEY = "tree-state";
+
+/* ---------- state ---------- */
 
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -148,52 +150,56 @@ function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function toggle(el) {
-  const next = el.nextElementSibling;
-  if (!next) return;
+/* ---------- toggle single node ---------- */
 
-  next.classList.toggle("expanded");
+function toggleNode(id, arrowEl) {
+  const ul = document.querySelector(`ul[data-id="${id}"]`);
+  if (!ul) return;
 
-  const arrow = el.querySelector(".arrow");
-  if (arrow) arrow.classList.toggle("expanded-arrow");
+  const expanded = ul.classList.toggle("expanded");
+  arrowEl.classList.toggle("expanded", expanded);
 
-  const id = next.dataset.id;
-  if (id) {
-    const state = loadState();
-    state[id] = next.classList.contains("expanded");
-    saveState(state);
-  }
+  const state = loadState();
+  state[id] = expanded;
+  saveState(state);
 }
+
+/* ---------- restore on load ---------- */
 
 window.addEventListener("DOMContentLoaded", () => {
   const state = loadState();
-  const lists = document.querySelectorAll("#tree-root ul.collapsible");
-  lists.forEach((ul) => {
+
+  document.querySelectorAll(".collapsible").forEach((ul) => {
     const id = ul.dataset.id;
-    if (id && state[id]) {
+    if (state[id]) {
       ul.classList.add("expanded");
       const arrow = ul.previousElementSibling.querySelector(".arrow");
-      if (arrow) arrow.classList.add("expanded-arrow");
+      if (arrow) arrow.classList.add("expanded");
     }
   });
 });
 
+/* ---------- toggle all ---------- */
+
 let allExpanded = false;
+
 function toggleAll() {
-  const lists = document.querySelectorAll("#tree-root ul.collapsible");
   const state = loadState();
-  lists.forEach((ul) => {
+
+  document.querySelectorAll(".collapsible").forEach((ul) => {
     const arrow = ul.previousElementSibling.querySelector(".arrow");
+
     if (allExpanded) {
       ul.classList.remove("expanded");
-      if (arrow) arrow.classList.remove("expanded-arrow");
-      if (ul.dataset.id) state[ul.dataset.id] = false;
+      arrow?.classList.remove("expanded");
+      state[ul.dataset.id] = false;
     } else {
       ul.classList.add("expanded");
-      if (arrow) arrow.classList.add("expanded-arrow");
-      if (ul.dataset.id) state[ul.dataset.id] = true;
+      arrow?.classList.add("expanded");
+      state[ul.dataset.id] = true;
     }
   });
+
   saveState(state);
   allExpanded = !allExpanded;
   document.getElementById("toggle-all-btn").textContent = allExpanded
