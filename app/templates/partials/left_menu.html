@@ -10,7 +10,15 @@
     <div class="node">
       <span class="arrow" onclick="toggleNode('{{ node.id }}', this)">▶</span>
 
-      <span class="label">{{ node.name }}</span>
+      <a
+        class="label"
+        hx-get="/ui/top-panel?company_id={{ node.id }}"
+        hx-trigger="click"
+        hx-target="#top-right"
+        hx-indicator="#loading-indicator"
+      >
+        {{ node.name }}
+      </a>
     </div>
 
     <ul class="collapsible" data-id="{{ node.id }}">

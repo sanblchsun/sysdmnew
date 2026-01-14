@@ -26,26 +26,22 @@ async def tree(request: Request, session: AsyncSession = Depends(get_db)):
 async def top_panel(
     request: Request,
     company_id: int | None = Query(None),
-    department_id: int | None = Query(None),
     session: AsyncSession = Depends(get_db),
 ):
     agents = []
     columns = []
 
-    # если передали фильтр — загружаем агентов
-    if company_id is not None or department_id is not None:
-        stmt = select(Agent)
-
-        if department_id is not None:
-            stmt = stmt.where(Agent.department_id == department_id)
-        elif company_id is not None:
-            # присоединяем Department, чтобы фильтровать по company
-            stmt = stmt.join(Agent.department).where(Department.company_id == company_id)
+    if company_id is not None:
+        stmt = (
+            select(Agent)
+            .join(Agent.department)
+            .where(Department.company_id == company_id)
+        )
 
         result = await session.execute(stmt)
         agents = result.scalars().all()
 
-        # динамически читаем поля модели Agent
+        # Динамическое получение имен столбцов модели Агент
         mapper = inspect(Agent)
         columns = [col.key for col in mapper.columns]
 
