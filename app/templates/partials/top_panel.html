@@ -1,11 +1,22 @@
-<div class="panel-content">
-  <h2>Top panel</h2>
-  <p>Основная рабочая область</p>
-
-  {% if request.query_params.get("view") == "details" %}
-  <div style="margin-top: 1rem">
-    <strong>Details view</strong>
-    <p>Загружено через HTMX без перезагрузки страницы</p>
-  </div>
-  {% endif %}
-</div>
+## Top panel {% if agent_columns %}
+<table class="agents-table">
+  <thead>
+    <tr>
+      {% for col in agent_columns %}
+      <th>{{ col }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for agent in agents %}
+    <tr>
+      {% for col in agent_columns %}
+      <td>{{ getattr(agent, col) }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div>Выберите Company или Department, чтобы увидеть агентов</div>
+{% endif %}
