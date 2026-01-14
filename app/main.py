@@ -10,7 +10,7 @@ from app.middleware.auth_html import AuthHTMLMiddleware
 
 
 app = FastAPI(title="SysDM RMM")
-# app.add_middleware(AuthHTMLMiddleware)
+app.add_middleware(AuthHTMLMiddleware)
 
 # Статика и шаблоны
 current_dir = os.path.dirname(os.path.abspath(__file__))

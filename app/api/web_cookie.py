@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pathlib import Path
 from app.config import settings
-from app.database import AsyncSessionLocal as get_session
+from app.database import get_db
 from app.models import User
 from app.core.authx import auth, auth_config
 from loguru import logger
@@ -30,7 +30,7 @@ async def login(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    db: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
 ):
     logger.debug('Мы в начале @router.post("/login")')
     result = await db.execute(select(User).where(User.username == username))
