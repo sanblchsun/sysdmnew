@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Вход - SYSDMRM</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/login.css') }}">
+  </head>
+  <body>
+    <div class="login-container">
+      <div class="login-header">
+        <h1>SYSDMRM</h1>
+        <p>Система управления удалёнными агентами</p>
+      </div>
+
+      <form method="POST" action="/login">
+        <div class="form-group">
+          <label for="username">Имя пользователя</label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            required
+            autofocus
+            placeholder="Введите ваш логин"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Пароль</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            required
+            placeholder="Введите ваш пароль"
+          />
+        </div>
+
+        <button type="submit" class="btn-login">Войти в систему</button>
+      </form>
+
+      {% if error %}
+      <div class="error-message">{{ error }}</div>
+      {% endif %}
+
+      <div class="footer">Требуется авторизация для доступа к системе</div>
+    </div>
+  </body>
+</html>
