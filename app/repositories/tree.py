@@ -13,6 +13,7 @@ async def get_tree(session: AsyncSession):
     for c in companies:
         company_node = {
             "id": c.id,  # Используем чисто числовой идентификатор
+            "name_id": f"company-{c.id}",
             "name": c.name,
             "type": "company",  # Устанавливаем правильный тип
             "children": [],
@@ -20,6 +21,7 @@ async def get_tree(session: AsyncSession):
         for d in c.departments:
             dept_node = {
                 "id": d.id,  # Аналогично используем числовой идентификатор
+                "name_id": f"dept-{d.id}",
                 "name": d.name,
                 "type": "department",  # Указываем тип отделения
                 "children": [],
@@ -27,6 +29,7 @@ async def get_tree(session: AsyncSession):
             for a in d.agents:
                 agent_node = {
                     "id": a.id,  # Чистое числовое значение
+                    "name_id": f"agent-{a.id}",
                     "name": a.name,
                     "type": "agent",  # Тип сотрудника
                     "children": [],

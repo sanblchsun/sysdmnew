@@ -6,7 +6,7 @@
 <li>
   {% if node.children %}
   <div class="node">
-    <span class="arrow" onclick="toggleNode('{{ node.id }}', this)">▶</span>
+    <span class="arrow" onclick="toggleNode('{{ node.name_id }}', this)">▶</span>
     <a
       class="label"
       hx-get="{% if node.type == 'company' %}/ui/top-panel?target_id={{ node.id }}&target_type=company{% else %}/ui/top-panel?target_id={{ node.id }}&target_type=department{% endif %}"
@@ -18,7 +18,7 @@
     </a>
   </div>
 
-  <ul class="collapsible" data-id="{{ node.id }}">
+  <ul class="collapsible" data-id="{{ node.name_id }}">
     {% for child in node.children %} {{ render_node(child) }} {% endfor %}
   </ul>
   {% else %}
