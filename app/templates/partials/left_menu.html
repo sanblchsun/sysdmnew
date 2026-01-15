@@ -1,42 +1,38 @@
-<!-- app/templates/partials/left_menu.html -->
-<nav>
-  <h2>Company Tree</h2>
+<h2>Company Tree</h2>
 
-  <button id="toggle-all-btn" onclick="toggleAll()">Развернуть всё</button>
+<button id="toggle-all-btn" onclick="toggleAll()">Развернуть всё</button>
 
-  {% macro render_node(node) %}
-  <li>
-    {% if node.children %}
-    <div class="node">
-      <span class="arrow" onclick="toggleNode('{{ node.id }}', this)">▶</span>
+{% macro render_node(node) %}
+<li>
+  {% if node.children %}
+  <div class="node">
+    <span class="arrow" onclick="toggleNode('{{ node.id }}', this)">▶</span>
+    <a
+      class="label"
+      hx-get="{% if node.type == 'company' %}/ui/top-panel?target_id={{ node.id }}&target_type=company{% else %}/ui/top-panel?target_id={{ node.id }}&target_type=department{% endif %}"
+      hx-trigger="click"
+      hx-target="#top-right"
+      hx-indicator="#loading-indicator"
+    >
+      {{ node.name }}
+    </a>
+  </div>
 
-      <a
-        class="label"
-        hx-get="/ui/top-panel?company_id={{ node.id }}"
-        hx-trigger="click"
-        hx-target="#top-right"
-        hx-indicator="#loading-indicator"
-      >
-        {{ node.name }}
-      </a>
-    </div>
-
-    <ul class="collapsible" data-id="{{ node.id }}">
-      {% for child in node.children %} {{ render_node(child) }} {% endfor %}
-    </ul>
-    {% else %}
-    <div class="node">
-      <span style="width: 1em"></span>
-      <span class="label">
-        {% if node.type == "agent" %} 👤 {{ node.name }} {% else %} {{ node.name
-        }} {% endif %}
-      </span>
-    </div>
-    {% endif %}
-  </li>
-  {% endmacro %}
-
-  <ul id="tree-root">
-    {% for company in companies %} {{ render_node(company) }} {% endfor %}
+  <ul class="collapsible" data-id="{{ node.id }}">
+    {% for child in node.children %} {{ render_node(child) }} {% endfor %}
   </ul>
-</nav>
+  {% else %}
+  <div class="node">
+    <span style="width: 1em"></span>
+    <span class="label">
+      {% if node.type == "agent" %} 👤 {{ node.name }} {% else %} {{ node.name
+      }} {% endif %}
+    </span>
+  </div>
+  {% endif %}
+</li>
+{% endmacro %}
+
+<ul id="tree-root">
+  {% for company in companies %} {{ render_node(company) }} {% endfor %}
+</ul>

@@ -1,4 +1,6 @@
 /* app/static/style.css */
+
+/* Основной layout */
 html,
 body {
   margin: 0;
@@ -13,7 +15,7 @@ body {
   height: 100%;
 }
 
-/* Контейнер */
+/* Контейнеры */
 #container {
   display: flex;
   height: 100vh;
@@ -21,7 +23,6 @@ body {
   overflow: hidden;
 }
 
-/* Левая панель */
 #left-panel {
   width: 250px;
   min-width: 50px;
@@ -31,7 +32,6 @@ body {
   padding: 0.5rem;
 }
 
-/* Вертикальный разделитель */
 .splitter.vertical {
   width: 5px;
   cursor: col-resize;
@@ -39,7 +39,6 @@ body {
   z-index: 10;
 }
 
-/* Правая область */
 #right-container {
   flex: 1;
   display: flex;
@@ -47,7 +46,6 @@ body {
   overflow: hidden;
 }
 
-/* Верхняя панель */
 #top-right {
   height: 50%;
   min-height: 0px;
@@ -57,11 +55,10 @@ body {
   padding: 0.5rem;
 }
 
-/* Горизонтальный разделитель */
 .splitter.horizontal {
-  height: 2px; /* увеличиваем для удобства drag */
+  height: 2px;
   cursor: row-resize;
-  background-color: transparent; /* сам разделитель прозрачный */
+  background-color: transparent;
   position: relative;
   display: flex;
   justify-content: center;
@@ -69,22 +66,19 @@ body {
   z-index: 10;
 }
 
-/* Ручка - всегда видна, выделяется цветом */
 .splitter.horizontal::before {
   content: "";
-  width: 60px; /* длина ручки */
-  height: 30px; /* толщина */
-  background-color: #ff9800; /* яркая, заметная */
+  width: 60px;
+  height: 30px;
+  background-color: #ff9800;
   border-radius: 3px;
   z-index: 11;
 }
 
-/* Hover эффект */
 .splitter.horizontal:hover::before {
   background-color: #ffc107;
 }
 
-/* Нижняя панель */
 #bottom-right {
   height: 50%;
   min-height: 0px;
@@ -94,27 +88,11 @@ body {
   padding: 0.5rem;
 }
 
-/* Контент */
 .panel-content {
   padding: 0.5rem;
 }
 
-/* Mobile адаптивность */
-@media (max-width: 768px) {
-  .splitter.horizontal {
-    height: 24px;
-  }
-  .splitter.horizontal::before {
-    width: 80px;
-    height: 8px;
-  }
-  .splitter.vertical {
-    width: 8px;
-  }
-}
-
-/* для дерева в левом окне */
-
+/* Дерево слева */
 ul {
   list-style: none;
   padding-left: 20px;
@@ -152,10 +130,61 @@ ul {
   max-height: 2000px;
 }
 
-/* app/static/style.css */
+/* Красивая таблица справа сверху */
+.agents-table {
+  width: 100%;
+  border-collapse: collapse;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-family: Arial, sans-serif;
+  margin-bottom: 20px;
+}
 
-/* app/static/style.css */
+.agents-table th {
+  background-color: #f2f2f2;
+  color: #333;
+  padding: 10px 15px;
+  text-align: left;
+  font-weight: bold;
+  border-bottom: 1px solid #ddd;
+}
 
+.agents-table td {
+  padding: 10px 15px;
+  border-bottom: 1px solid #ddd;
+}
+
+.agents-table tbody tr:nth-child(even) {
+  background-color: #241a1a;
+}
+
+.agents-table tbody tr:hover {
+  background-color: #583f3f;
+}
+
+.agents-table thead {
+  background-color: #3498db;
+  color: white;
+}
+
+.agents-table thead th {
+  padding: 12px 15px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Адаптация под мобильные устройства */
+@media screen and (max-width: 600px) {
+  .agents-table {
+    font-size: 14px;
+  }
+
+  .agents-table th,
+  .agents-table td {
+    padding: 8px 12px;
+  }
+}
+
+/* Загрузочный индикатор */
 #loading-indicator {
   font-size: 16px;
   text-align: center;
