@@ -36,9 +36,10 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    system: Mapped[str] = mapped_column(String(255), nullable=True)
     name_pc: Mapped[str] = mapped_column(String(255))
-    user_name: Mapped[str] = mapped_column(String(255))
-    ip_addr: Mapped[str] = mapped_column(String(15))
+    user_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    ip_addr: Mapped[str] = mapped_column(String(15), nullable=True)
 
     department_id: Mapped[int] = mapped_column(
         ForeignKey("departments.id", ondelete="CASCADE")

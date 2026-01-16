@@ -12,6 +12,13 @@
   <tbody>
     {% for agent in agents %}
     <tr>
+      {% if "linux" in agent.system.lower() %}
+      <td class="icon-class icon-linux"></td>
+      {% elif "mac" in agent.system.lower() %}
+      <td class="icon-class icon-apple"></td>
+      {% elif "windows" in agent.system.lower() %}
+      <td class="icon-class icon-windows"></td>
+      {% else %} {{ agent.system }} {% endif %}
       <td>{{ agent.name_pc }}</td>
       <td>{{ agent.user_name }}</td>
       <td>{{ agent.ip_addr }}</td>

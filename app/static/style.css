@@ -245,22 +245,23 @@ ul {
   line-height: 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 30px; /* Базовый размер иконок для десктопных экранов */
 }
 
 /* Приложение символа к классу */
-.icon-building::before {
+.icon-apple::before {
   color: #0d62c4;
   content: "\0F0035 "; /* Сюда вставляешь Unicode символ иконки */
 }
 
 /* Приложение символа к классу */
-.icon-building1::before {
+.icon-linux::before {
   color: #0d62c4;
   content: "\0F033D "; /* Сюда вставляешь Unicode символ иконки */
 }
 
 /* Приложение символа к классу */
-.icon-building2::before {
+.icon-windows::before {
   color: #0d62c4;
   content: "\0F05B3 "; /* Сюда вставляешь Unicode символ иконки */
 }

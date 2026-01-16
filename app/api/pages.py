@@ -33,12 +33,13 @@ async def top_panel(
     session: AsyncSession = Depends(get_db),
 ):
     agents = []
-    columns = ["Имя ПК", "Имя сотрудника", "IP", "Компания", "Отдел"]
+    columns = [" ", "Имя ПК", "Имя сотрудника", "IP", "Компания", "Отдел"]
 
     if target_id is not None and target_type is not None:
         if target_type == "company":
             stmt = (
                 select(
+                    Agent.system,
                     Agent.name_pc,
                     Agent.user_name,
                     Agent.ip_addr,
@@ -52,6 +53,7 @@ async def top_panel(
         elif target_type == "department":
             stmt = (
                 select(
+                    Agent.system,
                     Agent.name_pc,
                     Agent.user_name,
                     Agent.ip_addr,
