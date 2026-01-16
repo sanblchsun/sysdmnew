@@ -227,3 +227,40 @@ ul {
   border-radius: 50%;
   animation: spinner 1s linear infinite;
 }
+
+/* front woff2 */
+@font-face {
+  font-family: "FontIcons"; /* Название шрифта */
+  src: url("/static/fonts/662fefa8.woff2") format("woff2"); /* Путь к файлу шрифта */
+  font-weight: normal; /* Обычная жирность */
+  font-style: normal; /* Нормальный стиль */
+}
+
+.icon-class {
+  font-family: "FontIcons"; /* Используем объявление шрифта */
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Приложение символа к классу */
+.icon-building::before {
+  color: #0d62c4;
+  content: "\0F0035 "; /* Сюда вставляешь Unicode символ иконки */
+}
+
+/* Приложение символа к классу */
+.icon-building1::before {
+  color: #0d62c4;
+  content: "\0F033D "; /* Сюда вставляешь Unicode символ иконки */
+}
+
+/* Приложение символа к классу */
+.icon-building2::before {
+  color: #0d62c4;
+  content: "\0F05B3 "; /* Сюда вставляешь Unicode символ иконки */
+}
