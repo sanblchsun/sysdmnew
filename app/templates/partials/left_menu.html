@@ -2,6 +2,8 @@
 <h2>Company Tree</h2>
 
 <button id="toggle-all-btn" onclick="toggleAll()">Развернуть всё</button>
+<br />
+<br />
 
 {% macro render_node(node) %}
 <li>
@@ -17,7 +19,8 @@
       hx-target="#top-right"
       hx-indicator="#loading-indicator"
     >
-      🏛{{ node.name }}
+      {% if node.type == "company" %} 🏛{{ node.name }} {% else %} 📎{{ node.name
+      }} {% endif %}
     </a>
   </div>
 
@@ -28,7 +31,7 @@
   <div class="node">
     <span style="width: 1em"></span>
     <span class="label">
-      {% if node.type == "agent" %} 👤 {{ node.name }} {% else %} 🏛{{ node.name
+      {% if node.type == "agent" %} 👤 {{ node.name }} {% else %} 📎{{ node.name
       }} {% endif %}
     </span>
   </div>

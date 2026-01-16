@@ -32,7 +32,6 @@ async def login(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    logger.debug('Мы в начале @router.post("/login")')
     result = await db.execute(select(User).where(User.username == username))
     user: User | None = result.scalar_one_or_none()
 
@@ -45,11 +44,6 @@ async def login(
     try:
         access_token = auth.create_access_token(username)
         refresh_token = auth.create_refresh_token(username)
-        logger.debug(
-            f"""Мы сделали куки
-                         access_token
-                         refresh_token"""
-        )
 
         if "cookies" in auth_config.JWT_TOKEN_LOCATION:
             response = RedirectResponse(url="/agents", status_code=302)

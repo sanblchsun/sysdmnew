@@ -67,7 +67,6 @@ async def top_panel(
 
         result = await session.execute(stmt)
         agents = result.all()  # Берём полный результат
-        logger.debug(f"{agents}")
 
     return templates.TemplateResponse(
         "partials/top_panel.html",
