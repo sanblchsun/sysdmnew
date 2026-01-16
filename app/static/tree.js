@@ -1,7 +1,8 @@
+// app/static/tree.js
 const STORAGE_KEY = "tree-state";
 let allExpanded = false;
 
-const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || {});
 
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -24,22 +25,41 @@ function toggleAll() {
     arrow?.classList.toggle("expanded", allExpanded);
     state[ul.dataset.id] = allExpanded;
   });
+  state["toggleAll"] = allExpanded; // Сохраняем состояние кнопки
   save();
   document.getElementById("toggle-all-btn").textContent = allExpanded
     ? "Свернуть всё"
     : "Развернуть всё";
 }
 
-// Restore tree state
-const observer = new MutationObserver(() => {
+// Функция восстановления состояния после полной загрузки дерева
+function restoreTreeState() {
   const nodes = document.querySelectorAll(".collapsible");
   if (!nodes.length) return;
+
   nodes.forEach((ul) => {
     const arrow = ul.previousElementSibling.querySelector(".arrow");
     const expanded = !!state[ul.dataset.id];
     ul.classList.toggle("expanded", expanded);
     arrow?.classList.toggle("expanded", expanded);
   });
-  observer.disconnect();
+
+  // Восстановление состояния кнопки
+  const btn = document.getElementById("toggle-all-btn");
+  if (btn) {
+    allExpanded = state["toggleAll"] === true;
+    btn.textContent = allExpanded ? "Свернуть всё" : "Развернуть всё";
+  }
+}
+
+// Добавляем обработчик события для завершения загрузки дерева
+document.addEventListener("htmx:afterSwap", () => {
+  restoreTreeState(); // Начинаем восстановление состояния после успешной замены
 });
-observer.observe(document.body, { childList: true, subtree: true });
+
+// Первоначальное восстановление (для тех случаев, когда DOM уже готов)
+if (document.readyState === "complete") {
+  restoreTreeState();
+} else {
+  window.addEventListener("DOMContentLoaded", restoreTreeState);
+}
