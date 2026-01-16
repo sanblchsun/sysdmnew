@@ -10,7 +10,7 @@ from app.database import get_db
 from fastapi import Query
 from sqlalchemy import select
 from sqlalchemy.inspection import inspect
-from app.models import Agent, Department
+from app.models import Agent, Company, Department
 from typing import Union
 
 router = APIRouter()
@@ -28,37 +28,34 @@ async def tree(request: Request, session: AsyncSession = Depends(get_db)):
 @router.get("/ui/top-panel")
 async def top_panel(
     request: Request,
-    target_id: Optional[int] = Query(None),  # Допускаем None для target_id
-    target_type: Optional[str] = Query(None),  # Допускаем None для target_type
+    target_id: Optional[int] = Query(None),
+    target_type: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_db),
 ):
     agents = []
-    columns = []
+    columns = ["Имя сотрудника", "Компания", "Отдел"]
 
     if target_id is not None and target_type is not None:
         if target_type == "company":
             stmt = (
-                select(Agent)
+                select(Agent.name, Company.name.label("company_name"), Department.name.label("department_name"))  # Изменяем запрос
                 .join(Agent.department)
-                .where(Department.company_id == target_id)
+                .join(Department.company)
+                .where(Company.id == target_id)
             )
         elif target_type == "department":
-            stmt = select(Agent).where(Agent.department_id == target_id)
+            stmt = (
+                select(Agent.name, Company.name.label("company_name"), Department.name.label("department_name"))  # Изменяем запрос
+                .join(Agent.department)
+                .join(Department.company)
+                .where(Department.id == target_id)
+            )
         else:
             raise HTTPException(status_code=400, detail="Invalid target type.")
 
         result = await session.execute(stmt)
-        agents = result.scalars().all()
+        agents = result.all()  # Берём полный результат
 
-        # Динамическое получение имен столбцов модели Агент
-        mapper = inspect(Agent)
-        columns = [col.key for col in mapper.columns]
-        logger.debug(
-            f"""Передаются столбцы:
-                     {columns}
-                Агенты такие:
-                     {agents}"""
-        )
     return templates.TemplateResponse(
         "partials/top_panel.html",
         {

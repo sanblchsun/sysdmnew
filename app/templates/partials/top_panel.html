@@ -5,18 +5,19 @@
     <tr>
       {% for col in agent_columns %}
       <th>{{ col }}</th>
+      <!-- Русские псевдонимы столбцов -->
       {% endfor %}
     </tr>
   </thead>
   <tbody>
     {% for agent in agents %}
     <tr>
-      {% for col in agent_columns %}
-      <td>
-        {{ agent[col] if col in agent._sa_instance_state.attrs.keys() else '-'
-        }}
-      </td>
-      {% endfor %}
+      <td>{{ agent.name }}</td>
+      <!-- Имя сотрудника -->
+      <td>{{ agent.company_name }}</td>
+      <!-- Название компании -->
+      <td>{{ agent.department_name }}</td>
+      <!-- Название отдела -->
     </tr>
     {% endfor %}
   </tbody>
