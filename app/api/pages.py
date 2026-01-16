@@ -53,7 +53,12 @@ async def top_panel(
         # Динамическое получение имен столбцов модели Агент
         mapper = inspect(Agent)
         columns = [col.key for col in mapper.columns]
-
+        logger.debug(
+            f"""Передаются столбцы:
+                     {columns}
+                Агенты такие:
+                     {agents}"""
+        )
     return templates.TemplateResponse(
         "partials/top_panel.html",
         {
