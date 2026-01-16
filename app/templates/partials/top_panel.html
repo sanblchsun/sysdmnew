@@ -12,7 +12,9 @@
   <tbody>
     {% for agent in agents %}
     <tr>
-      <td>{{ agent.name }}</td>
+      <td>{{ agent.name_pc }}</td>
+      <td>{{ agent.user_name }}</td>
+      <td>{{ agent.ip_addr }}</td>
       <!-- Имя сотрудника -->
       <td>{{ agent.company_name }}</td>
       <!-- Название компании -->

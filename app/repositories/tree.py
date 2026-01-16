@@ -30,7 +30,7 @@ async def get_tree(session: AsyncSession):
                 agent_node = {
                     "id": a.id,  # Чистое числовое значение
                     "name_id": f"agent-{a.id}",
-                    "name": a.name,
+                    "name": a.name_pc,
                     "type": "agent",  # Тип сотрудника
                     "children": [],
                 }

@@ -105,6 +105,22 @@ ul {
   user-select: none;
 }
 
+/* Наведение на узел дерева */
+.node:hover {
+  background-color: #3b3b3b; /* Темно-серый оттенок при наведении */
+  color: white; /* Белый текст при наведении */
+}
+
+/* Наведение на стрелку раскрытия узла */
+.arrow:hover {
+  color: #ffc107; /* Желтая стрелочка при наведении */
+}
+
+/* Наведение на label узла */
+.label:hover {
+  text-decoration: underline; /* Подчеркивание при наведении */
+}
+
 .arrow {
   cursor: pointer;
   width: 1em;

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from passlib.context import CryptContext
 
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -11,8 +12,7 @@ class Company(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True)
 
     departments: Mapped[list["Department"]] = relationship(
-        back_populates="company",
-        lazy="selectin"
+        back_populates="company", lazy="selectin"
     )
 
 
@@ -28,8 +28,7 @@ class Department(Base):
 
     company: Mapped["Company"] = relationship(back_populates="departments")
     agents: Mapped[list["Agent"]] = relationship(
-        back_populates="department",
-        lazy="selectin"
+        back_populates="department", lazy="selectin"
     )
 
 
@@ -37,16 +36,17 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255))
+    name_pc: Mapped[str] = mapped_column(String(255))
+    user_name: Mapped[str] = mapped_column(String(255))
+    ip_addr: Mapped[str] = mapped_column(String(15))
 
     department_id: Mapped[int] = mapped_column(
         ForeignKey("departments.id", ondelete="CASCADE")
     )
 
     department: Mapped["Department"] = relationship(back_populates="agents")
-    
-    
-    
+
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
