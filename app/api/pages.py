@@ -74,14 +74,6 @@ async def top_panel(
     )
 
 
-@router.get("/ui/bottom-panel")
-async def bottom_panel(request: Request):
-    return templates.TemplateResponse(
-        "partials/bottom_panel.html",
-        {"request": request},
-    )
-
-
 @router.get("/ui/agent-details/{agent_id}")
 async def agent_details(
     agent_id: int, request: Request, session: AsyncSession = Depends(get_db)
