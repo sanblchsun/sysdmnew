@@ -11,22 +11,30 @@
   </thead>
   <tbody>
     {% for agent in agents %}
-    <tr>
-      {% if "linux" in agent.system.lower() %}
-      <td class="icon-class icon-linux"></td>
-      {% elif "mac" in agent.system.lower() %}
-      <td class="icon-class icon-apple"></td>
-      {% elif "windows" in agent.system.lower() %}
-      <td class="icon-class icon-windows"></td>
-      {% else %} {{ agent.system }} {% endif %}
+    <tr
+      hx-get="/ui/agent-details/{{ agent.id }}"
+      hx-trigger="click"
+      hx-target="#bottom-right"
+      hx-swap="innerHTML"
+    >
+      <td>
+        {% if "linux" in agent.system.lower() %}
+        <span class="icon-class icon-linux"></span>
+        {% elif "mac" in agent.system.lower() or "apple" in agent.system.lower()
+        %}
+        <span class="icon-class icon-apple"></span>
+        {% elif "windows" in agent.system.lower() %}
+        <span class="icon-class icon-windows"></span>
+        {% else %}
+        <span>-</span>
+        <!-- Показываем тире, если иконка не подошла -->
+        {% endif %}
+      </td>
       <td>{{ agent.name_pc }}</td>
       <td>{{ agent.user_name }}</td>
       <td>{{ agent.ip_addr }}</td>
-      <!-- Имя сотрудника -->
       <td>{{ agent.company_name }}</td>
-      <!-- Название компании -->
       <td>{{ agent.department_name }}</td>
-      <!-- Название отдела -->
     </tr>
     {% endfor %}
   </tbody>

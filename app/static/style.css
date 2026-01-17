@@ -79,16 +79,18 @@ body {
   background-color: #ffc107;
 }
 
-#bottom-right {
-  height: 50%;
-  min-height: 0px;
-  background-color: #2d2d2d;
+#toggle-all-btn {
+  min-height: 50px;
+  height: 5%;
+  background-color: #2f55c0;
   color: #fff;
   overflow: auto;
   padding: 0.5rem;
 }
 
-.panel-content {
+#bottom-right {
+  background-color: #1e1e1e;
+  color: #fff;
   padding: 0.5rem;
 }
 

@@ -1,3 +1,4 @@
+// app/static/splitter.js
 window.addEventListener("DOMContentLoaded", () => {
   const leftPanel = document.getElementById("left-panel");
   const topPanel = document.getElementById("top-right");

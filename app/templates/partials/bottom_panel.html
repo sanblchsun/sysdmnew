@@ -1,5 +1,29 @@
 <!-- app/templates/partials/bottom_panel.html -->
 <div class="panel-content">
+  {% if agent %}
+  <h3>Подробности агента</h3>
+  <p><strong>Имя ПК:</strong> {{ agent.name_pc }}</p>
+  <p><strong>Пользователь:</strong> {{ agent.user_name }}</p>
+  <p><strong>Операционная система:</strong> {{ agent.system }}</p>
+  <p><strong>IP-адрес:</strong> {{ agent.ip_addr }}</p>
+  <hr />
+  <h4>Диски:</h4>
+  <ul>
+    {% if additional_data.disks %}
+    <!-- Выводим все доступные диски -->
+    {% for disk in additional_data.disks %}
+    <li>{{ disk.name }}: {{ disk.size }} ГБ ({{ disk.free }} ГБ свободно)</li>
+    {% endfor %} {% else %}
+    <!-- Если данных нет, выводим единственный диск по умолчанию -->
+    <li>C: - ГБ (- ГБ свободно)</li>
+    {% endif %}
+  </ul>
+  <h4>Память:</h4>
+  <p>Общая память: {{ additional_data.total_memory or "-" }} ГБ</p>
+  <p>Свободно: {{ additional_data.available_memory or "-" }} ГБ</p>
+  <h4>Внешний IP-адрес:</h4>
+  <p>{{ additional_data.external_ip or "-" }}</p>
+  {% else %}
   <h3>Bottom panel</h3>
   <p>Логи / консоль / статус</p>
   <pre style="margin-top: 1rem">
@@ -7,4 +31,5 @@
 [OK] HTMX connected
 [READY] Waiting for events
   </pre>
+  {% endif %}
 </div>

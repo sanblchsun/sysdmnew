@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.inspection import inspect
 from app.models import Agent, Company, Department
 from typing import Union
+from sqlalchemy.orm import joinedload
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -36,39 +37,32 @@ async def top_panel(
     columns = [" ", "Имя ПК", "Имя сотрудника", "IP", "Компания", "Отдел"]
 
     if target_id is not None and target_type is not None:
+        # Объединяем общие части запроса
+        common_query = (
+            select(
+                Agent.id,  # Обязательно включаем id
+                Agent.system,
+                Agent.name_pc,
+                Agent.user_name,
+                Agent.ip_addr,
+                Company.name.label("company_name"),
+                Department.name.label("department_name"),
+            )
+            .join(Agent.department)
+            .join(Department.company)
+        )
+
+        # Добавляем условия в зависимости от типа запроса
         if target_type == "company":
-            stmt = (
-                select(
-                    Agent.system,
-                    Agent.name_pc,
-                    Agent.user_name,
-                    Agent.ip_addr,
-                    Company.name.label("company_name"),
-                    Department.name.label("department_name"),
-                )  # Изменяем запрос
-                .join(Agent.department)
-                .join(Department.company)
-                .where(Company.id == target_id)
-            )
+            stmt = common_query.where(Company.id == target_id)
         elif target_type == "department":
-            stmt = (
-                select(
-                    Agent.system,
-                    Agent.name_pc,
-                    Agent.user_name,
-                    Agent.ip_addr,
-                    Company.name.label("company_name"),
-                    Department.name.label("department_name"),
-                )  # Изменяем запрос
-                .join(Agent.department)
-                .join(Department.company)
-                .where(Department.id == target_id)
-            )
+            stmt = common_query.where(Department.id == target_id)
         else:
             raise HTTPException(status_code=400, detail="Invalid target type.")
 
         result = await session.execute(stmt)
         agents = result.all()  # Берём полный результат
+        logger.debug(f"{agents}")
 
     return templates.TemplateResponse(
         "partials/top_panel.html",
@@ -85,4 +79,31 @@ async def bottom_panel(request: Request):
     return templates.TemplateResponse(
         "partials/bottom_panel.html",
         {"request": request},
+    )
+
+
+@router.get("/ui/agent-details/{agent_id}")
+async def agent_details(
+    agent_id: int, request: Request, session: AsyncSession = Depends(get_db)
+):
+    # Получаем агента по ID
+    agent_stmt = (
+        select(Agent)
+        .options(joinedload(Agent.additional_data))
+        .where(Agent.id == agent_id)
+    )
+    agent_result = await session.execute(agent_stmt)
+    agent = agent_result.scalars().first()
+
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Используем существующий шаблон
+    return templates.TemplateResponse(
+        "partials/bottom_panel.html",
+        {
+            "request": request,
+            "agent": agent,
+            "additional_data": agent.additional_data or {},
+        },
     )
