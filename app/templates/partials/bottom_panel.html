@@ -2,27 +2,42 @@
 <div class="panel-content">
   {% if agent %}
   <h3>Подробности агента</h3>
+
   <p><strong>Имя ПК:</strong> {{ agent.name_pc }}</p>
   <p><strong>Пользователь:</strong> {{ agent.user_name }}</p>
   <p><strong>Операционная система:</strong> {{ agent.system }}</p>
   <p><strong>IP-адрес:</strong> {{ agent.ip_addr }}</p>
+
   <hr />
+
   <h4>Диски:</h4>
   <ul>
-    {% if additional_data.disks %}
-    <!-- Выводим все доступные диски -->
-    {% for disk in additional_data.disks %}
-    <li>{{ disk.name }}: {{ disk.size }} ГБ ({{ disk.free }} ГБ свободно)</li>
+    {% if agent.additional_data and agent.additional_data.disks %} {% for disk
+    in agent.additional_data.disks %}
+    <li>
+      {{ disk.name }}: {{ disk.size or "-" }} ГБ ({{ disk.free or "-" }} ГБ
+      свободно)
+    </li>
     {% endfor %} {% else %}
-    <!-- Если данных нет, выводим единственный диск по умолчанию -->
     <li>C: - ГБ (- ГБ свободно)</li>
     {% endif %}
   </ul>
+
   <h4>Память:</h4>
-  <p>Общая память: {{ additional_data.total_memory or "-" }} ГБ</p>
-  <p>Свободно: {{ additional_data.available_memory or "-" }} ГБ</p>
+  <p>
+    Общая память: {{ agent.additional_data.total_memory if agent.additional_data
+    else "-" }} ГБ
+  </p>
+  <p>
+    Свободно: {{ agent.additional_data.available_memory if agent.additional_data
+    else "-" }} ГБ
+  </p>
+
   <h4>Внешний IP-адрес:</h4>
-  <p>{{ additional_data.external_ip or "-" }}</p>
+  <p>
+    {{ agent.additional_data.external_ip if agent.additional_data else "-" }}
+  </p>
+
   {% else %}
   <h3>Bottom panel</h3>
   <p>Логи / консоль / статус</p>
@@ -30,6 +45,7 @@
 [INFO] Service started
 [OK] HTMX connected
 [READY] Waiting for events
-  </pre>
+    </pre
+  >
   {% endif %}
 </div>

@@ -57,5 +57,18 @@ async def login(
 
 # -------------------- AGENTS (HTML) --------------------
 @router.get("/agents")
-async def agents_page(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+async def agents_page(
+    request: Request,
+    target_type: str | None = None,
+    target_id: int | None = None,
+    agent_id: int | None = None,
+):
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "target_type": target_type,
+            "target_id": target_id,
+            "agent_id": agent_id,
+        },
+    )
