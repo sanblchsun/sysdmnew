@@ -81,11 +81,24 @@ body {
 
 #toggle-all-btn {
   min-height: 50px;
+  min-width: 130px;
   height: 5%;
   background-color: #2f55c0;
   color: #fff;
   overflow: auto;
   padding: 0.5rem;
+  margin: 1%
+}
+
+#reset-splitters-btn {
+  min-height: 50px;
+  min-width: 130px;
+  height: 5%;
+  background-color: #2f55c0;
+  color: #fff;
+  overflow: auto;
+  padding: 0.5rem;
+  margin: 1%
 }
 
 #bottom-right {

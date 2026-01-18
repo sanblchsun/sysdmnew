@@ -164,3 +164,23 @@ window.addEventListener("DOMContentLoaded", () => {
     draggingH = false;
   });
 });
+
+function resetSplitters() {
+  // Сбрасываем левый блок в 250px
+  const leftPanel = document.getElementById("left-panel");
+  if (leftPanel) leftPanel.style.width = "250px";
+
+  // Сбрасываем верхний/нижний блок в 50% высоты
+  const topRight = document.getElementById("top-right");
+  const bottomRight = document.getElementById("bottom-right");
+  if (topRight && bottomRight) {
+    topRight.style.height = "50%";
+    bottomRight.style.height = "50%";
+  }
+}
+
+// Подключаем к кнопке после загрузки DOM
+window.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("reset-splitters-btn");
+  if (btn) btn.addEventListener("click", resetSplitters);
+});
