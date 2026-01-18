@@ -179,8 +179,10 @@ ul {
   background-color: #241a1a;
 }
 
-.agents-table tbody tr:hover {
+/* Hover только для неактивных строк */
+.agents-table tbody tr:hover:not(.is-active) {
   background-color: #583f3f;
+  color: #fff;
 }
 
 .agents-table thead {
@@ -236,14 +238,14 @@ ul {
 
 /* front woff2 */
 @font-face {
-  font-family: "FontIcons"; /* Название шрифта */
-  src: url("/static/fonts/662fefa8.woff2") format("woff2"); /* Путь к файлу шрифта */
-  font-weight: normal; /* Обычная жирность */
-  font-style: normal; /* Нормальный стиль */
+  font-family: "FontIcons";
+  src: url("/static/fonts/662fefa8.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
 }
 
 .icon-class {
-  font-family: "FontIcons"; /* Используем объявление шрифта */
+  font-family: "FontIcons";
   font-style: normal;
   font-weight: normal;
   font-variant: normal;
@@ -251,43 +253,40 @@ ul {
   line-height: 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-size: 30px; /* Базовый размер иконок для десктопных экранов */
+  font-size: 30px;
 }
 
-/* Приложение символа к классу */
 .icon-apple::before {
   color: #0d62c4;
-  content: "\0F0035 "; /* Сюда вставляешь Unicode символ иконки */
+  content: "\0F0035 ";
 }
 
-/* Приложение символа к классу */
 .icon-linux::before {
   color: #0d62c4;
-  content: "\0F033D "; /* Сюда вставляешь Unicode символ иконки */
+  content: "\0F033D ";
 }
 
-/* Приложение символа к классу */
 .icon-windows::before {
   color: #0d62c4;
-  content: "\0F05B3 "; /* Сюда вставляешь Unicode символ иконки */
+  content: "\0F05B3 ";
 }
 
-/* Адаптивные размеры иконок для мобильных устройств */
+/* Адаптивные размеры иконок */
 @media (max-width: 768px) {
   .icon-class {
-    font-size: 22px; /* Уменьшаем размер иконок для смартфонов и планшетов */
+    font-size: 22px;
   }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
   .icon-class {
-    font-size: 25px; /* Промежуточный размер для небольших ноутбуков и планшетных компьютеров */
+    font-size: 25px;
   }
 }
 
 @media (min-width: 1025px) {
   .icon-class {
-    font-size: 30px; /* Большой размер для настольных мониторов */
+    font-size: 30px;
   }
 }
 
@@ -297,4 +296,10 @@ ul {
   color: #fff;
   border-radius: 4px;
   padding: 2px 6px;
+}
+
+/* Активная строка таблицы */
+.agents-table tr.is-active {
+  background-color: #03174e !important;
+  color: #fff;
 }

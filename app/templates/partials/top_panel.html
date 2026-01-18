@@ -1,34 +1,21 @@
-<!-- app/templates/partials/top_panel.html -->
 {% if agent_columns %}
 <table class="agents-table">
   <thead>
     <tr>
       {% for col in agent_columns %}
       <th>{{ col }}</th>
-      <!-- Русские псевдонимы столбцов -->
       {% endfor %}
     </tr>
   </thead>
   <tbody>
-    {% for agent in agents %} 
-    {% if request.url.query %}
+    {% for agent in agents %}
     <tr
+      data-agent-id="{{ agent.id }}"
       hx-get="/ui/bottom-panel?agent_id={{ agent.id }}"
       hx-target="#bottom-right"
       hx-swap="innerHTML"
-      hx-push-url="/agents?{{ request.url.query }}&agent_id={{ agent.id }}"
+      class="{% if agent.id|string == request.query_params.get('agent_id') %}is-active{% endif %}"
     >
-      {% else %}
-    </tr>
-
-    <tr
-      hx-get="/ui/bottom-panel?agent_id={{ agent.id }}"
-      hx-target="#bottom-right"
-      hx-swap="innerHTML"
-      hx-push-url="/agents?agent_id={{ agent.id }}"
-    >
-      {% endif %}
-
       <td>
         {% if "linux" in agent.system.lower() %}
         <span class="icon-class icon-linux"></span>
@@ -39,7 +26,6 @@
         <span class="icon-class icon-windows"></span>
         {% else %}
         <span>-</span>
-        <!-- Показываем тире, если иконка не подошла -->
         {% endif %}
       </td>
       <td>{{ agent.name_pc }}</td>

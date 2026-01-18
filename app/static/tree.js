@@ -1,4 +1,3 @@
-// app/static/tree.js
 const STORAGE_KEY = "tree-state";
 let allExpanded = false;
 
@@ -25,14 +24,12 @@ function toggleAll() {
     arrow?.classList.toggle("expanded", allExpanded);
     state[ul.dataset.id] = allExpanded;
   });
-  state["toggleAll"] = allExpanded; // Сохраняем состояние кнопки
+  state["toggleAll"] = allExpanded;
   save();
-  document.getElementById("toggle-all-btn").textContent = allExpanded
-    ? "Свернуть всё"
-    : "Развернуть всё";
+  const btn = document.getElementById("toggle-all-btn");
+  if (btn) btn.textContent = allExpanded ? "Свернуть всё" : "Развернуть всё";
 }
 
-// Функция восстановления состояния после полной загрузки дерева
 function restoreTreeState() {
   const nodes = document.querySelectorAll(".collapsible");
   if (!nodes.length) return;
@@ -44,7 +41,6 @@ function restoreTreeState() {
     arrow?.classList.toggle("expanded", expanded);
   });
 
-  // Восстановление состояния кнопки
   const btn = document.getElementById("toggle-all-btn");
   if (btn) {
     allExpanded = state["toggleAll"] === true;
@@ -52,12 +48,8 @@ function restoreTreeState() {
   }
 }
 
-// Добавляем обработчик события для завершения загрузки дерева
-document.addEventListener("htmx:afterSwap", () => {
-  restoreTreeState(); // Начинаем восстановление состояния после успешной замены
-});
+document.addEventListener("htmx:afterSwap", restoreTreeState);
 
-// Первоначальное восстановление (для тех случаев, когда DOM уже готов)
 if (document.readyState === "complete") {
   restoreTreeState();
 } else {
@@ -79,13 +71,8 @@ function highlightSelectedNodeFromURL() {
     `.label[data-node-type="${targetType}"][data-node-id="${targetId}"]`,
   );
 
-  if (active) {
-    active.classList.add("is-active");
-  }
+  if (active) active.classList.add("is-active");
 }
 
-// После любого HTMX обновления
 document.addEventListener("htmx:afterSwap", highlightSelectedNodeFromURL);
-
-// И при первой загрузке страницы
 window.addEventListener("DOMContentLoaded", highlightSelectedNodeFromURL);
