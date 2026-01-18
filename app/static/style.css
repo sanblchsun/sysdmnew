@@ -290,3 +290,11 @@ ul {
     font-size: 30px; /* Большой размер для настольных мониторов */
   }
 }
+
+/* Активный элемент дерева */
+.label.is-active {
+  background-color: #2f55c0;
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 6px;
+}

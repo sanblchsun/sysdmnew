@@ -63,3 +63,29 @@ if (document.readyState === "complete") {
 } else {
   window.addEventListener("DOMContentLoaded", restoreTreeState);
 }
+
+function highlightSelectedNodeFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const targetType = params.get("target_type");
+  const targetId = params.get("target_id");
+
+  document.querySelectorAll(".label.is-active").forEach((el) => {
+    el.classList.remove("is-active");
+  });
+
+  if (!targetType || !targetId) return;
+
+  const active = document.querySelector(
+    `.label[data-node-type="${targetType}"][data-node-id="${targetId}"]`,
+  );
+
+  if (active) {
+    active.classList.add("is-active");
+  }
+}
+
+// После любого HTMX обновления
+document.addEventListener("htmx:afterSwap", highlightSelectedNodeFromURL);
+
+// И при первой загрузке страницы
+window.addEventListener("DOMContentLoaded", highlightSelectedNodeFromURL);
