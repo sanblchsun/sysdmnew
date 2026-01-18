@@ -165,22 +165,53 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-function resetSplitters() {
-  // Сбрасываем левый блок в 250px
-  const leftPanel = document.getElementById("left-panel");
-  if (leftPanel) leftPanel.style.width = "250px";
+// app/static/splitter.js
 
-  // Сбрасываем верхний/нижний блок в 50% высоты
+function resetSplitters() {
+  console.log("Reset splitters");
+
+  const leftPanel = document.getElementById("left-panel");
   const topRight = document.getElementById("top-right");
   const bottomRight = document.getElementById("bottom-right");
+
+  if (leftPanel) {
+    leftPanel.style.width = "250px";
+    localStorage.setItem("leftPanelWidth", "250px");
+  }
+
   if (topRight && bottomRight) {
     topRight.style.height = "50%";
     bottomRight.style.height = "50%";
+    localStorage.setItem("topPanelHeightPercent", "50");
   }
 }
 
-// Подключаем к кнопке после загрузки DOM
-window.addEventListener("DOMContentLoaded", () => {
+/* =======================
+   Bind reset button
+   ======================= */
+function bindResetButton() {
   const btn = document.getElementById("reset-splitters-btn");
-  if (btn) btn.addEventListener("click", resetSplitters);
-});
+
+  if (!btn) {
+    console.warn("reset-splitters-btn not found");
+    return;
+  }
+
+  // защита от двойного навешивания
+  if (btn.dataset.bound === "1") return;
+
+  btn.addEventListener("click", resetSplitters);
+  btn.dataset.bound = "1";
+
+  console.log("reset-splitters-btn bound");
+}
+
+/* =======================
+   Initial bind
+   ======================= */
+window.addEventListener("DOMContentLoaded", bindResetButton);
+
+/* =======================
+   HTMX rebind
+   ======================= */
+document.addEventListener("htmx:afterSwap", bindResetButton);
