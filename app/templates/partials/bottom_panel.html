@@ -1,16 +1,20 @@
 <!-- app/templates/partials/bottom_panel.html -->
 <div class="panel-content">
   {% if agent %}
-  <h3>Подробности агента</h3>
+  <h3 class="h3_position">Подробности агента</h3>
 
-  <p><strong>Имя ПК:</strong> {{ agent.name_pc }}</p>
-  <p><strong>Пользователь:</strong> {{ agent.user_name }}</p>
-  <p><strong>Операционная система:</strong> {{ agent.system }}</p>
-  <p><strong>IP-адрес:</strong> {{ agent.ip_addr }}</p>
+  <nobr class="icon-class icon_name_pc"></nobr><nobr><strong> Имя ПК:</strong> {{ agent.name_pc }}</nobr>
+  <br>
+  <nobr class="icon-class icon_user"></nobr><nobr><strong"> Пользователь:</strong> {{ agent.user_name }}</nobr>
+  <br>
+  <nobr class="icon-class icon_os"></nobr><nobr><strong> Операционная система:</strong> {{ agent.system }}</nobr>
+  <br>
+  <nobr class="icon-class icon_user_network"></nobr><nobr><strong> IP-адрес:</strong> {{ agent.ip_addr }}</nobr>
 
-  <hr />
+  <hr/>
 
-  <h4>Диски:</h4>
+  <nobr class="icon-class icon_disk"></nobr><nobr><strong> Диски:</strong></nobr>
+  <br>
   <ul>
     {% if agent.additional_data and agent.additional_data.disks %} {% for disk
     in agent.additional_data.disks %}
@@ -23,7 +27,7 @@
     {% endif %}
   </ul>
 
-  <h4>Память:</h4>
+  <nobr class="icon-class icon_memory"></nobr><nobr><strong> Память:</strong></nobr>
   <p>
     Общая память: {{ agent.additional_data.total_memory if agent.additional_data
     else "-" }} ГБ
@@ -33,10 +37,10 @@
     else "-" }} ГБ
   </p>
 
-  <h4>Внешний IP-адрес:</h4>
-  <p>
+  <nobr class="icon-class icon_earth_network"></nobr><nobr> Внешний IP-адрес:</nobr>
+  <nobr>
     {{ agent.additional_data.external_ip if agent.additional_data else "-" }}
-  </p>
+  </nobr>
 
   {% else %}
   <h3>Bottom panel</h3>

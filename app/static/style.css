@@ -87,7 +87,7 @@ body {
   color: #fff;
   overflow: auto;
   padding: 0.5rem;
-  margin: 1%
+  margin: 1%;
 }
 
 #reset-splitters-btn {
@@ -98,7 +98,7 @@ body {
   color: #fff;
   overflow: auto;
   padding: 0.5rem;
-  margin: 1%
+  margin: 1%;
 }
 
 #bottom-right {
@@ -209,6 +209,10 @@ ul {
   letter-spacing: 1px;
 }
 
+.h3_position {
+  text-align: center;
+}
+
 /* Адаптация под мобильные устройства */
 @media screen and (max-width: 600px) {
   .agents-table {
@@ -271,17 +275,52 @@ ul {
 
 .icon-apple::before {
   color: #0d62c4;
-  content: "\0F0035 ";
+  content: "\0F0035";
 }
 
 .icon-linux::before {
   color: #0d62c4;
-  content: "\0F033D ";
+  content: "\0F033D";
 }
 
 .icon-windows::before {
   color: #0d62c4;
-  content: "\0F05B3 ";
+  content: "\0F05B3";
+}
+
+.icon_user::before {
+  color: #0d62c4;
+  content: "\0F0004";
+}
+
+.icon_user_network::before {
+  color: #0d62c4;
+  content: "\0F0317";
+}
+
+.icon_earth_network::before {
+  color: #0d62c4;
+  content: "\0F01E7";
+}
+
+.icon_name_pc::before {
+  color: #0d62c4;
+  content: "\0F07C0";
+}
+
+.icon_os::before {
+  color: #0d62c4;
+  content: "\0F0372";
+}
+
+.icon_disk::before {
+  color: #0d62c4;
+  content: "\0F0878";
+}
+
+.icon_memory::before {
+  color: #0d62c4;
+  content: "\0F1345";
 }
 
 /* Адаптивные размеры иконок */
