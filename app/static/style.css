@@ -47,12 +47,12 @@ body {
 }
 
 #top-right {
+  min-height: 0;
   height: 50%;
-  min-height: 0px;
   background-color: #252526;
+  border: 1px solid red; /* временно для отладки */
   color: #fff;
   overflow: auto;
-  padding: 0.5rem;
 }
 
 .splitter.horizontal {
@@ -89,9 +89,13 @@ body {
 }
 
 #bottom-right {
+  flex: 1;
+  min-height: 0;
+  height: 50%;
   background-color: #1e1e1e;
+  border: 1px solid blue; /* временно для отладки */
   color: #fff;
-  padding: 0.5rem;
+  overflow: auto;
 }
 
 /* Дерево слева */
