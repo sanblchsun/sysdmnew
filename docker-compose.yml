@@ -1,0 +1,104 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: sysdm_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+# ⚠️ ПРИ ИЗМЕНЕНИИ ПАРОЛЯ ВЫПОЛНИТЕ:
+# ⚠️ docker-compose exec db psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'НОВЫЙ_ПАРОЛЬ';"
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    env_file:
+      - .env
+    networks:
+      - sysdm_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+#    restart: always
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sysdm_api
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    environment:
+      # Основные настройки
+      APP_HOST: ${APP_HOST}
+      APP_PORT: ${APP_PORT}
+      DEBUG: ${DEBUG}
+      DATABASE_URL: ${DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      # Дополнительные переменные
+      TZ: ${TZ:-Europe/Moscow}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Монтируем исходный код для разработки
+      - .:/app
+      # Монтируем логи и загрузки
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+      - ./backups:/app/backups
+    env_file:
+      - .env
+    networks:
+      - sysdm_network
+    restart: unless-stopped
+#    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sysdm.rule=Host(`sysdm.local`)"
+      - "traefik.http.services.sysdm.loadbalancer.server.port=8000"
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./app/static:/app/static:ro
+    networks:
+      - sysdm_network
+    restart: unless-stopped
+
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    networks:
+      - sysdm_network
+
+
+
+networks:
+  sysdm_network:
+    driver: bridge
+    name: sysdm_network
+
+volumes:
+  postgres_data:
+    driver: local

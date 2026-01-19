@@ -1,4 +1,5 @@
 # Python
+migrations/versions/
 test/
 certbot/
 cookies.txt
