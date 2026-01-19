@@ -1,5 +1,4 @@
 # app/models.py
-from pydantic import BaseModel
 from sqlalchemy import JSON, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -33,14 +32,30 @@ class Department(Base):
     )
 
 
+from datetime import datetime
+import uuid
+from sqlalchemy import DateTime, Boolean
+
+
+from datetime import datetime
+from sqlalchemy import String, Boolean, DateTime
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+import uuid
+
+
 class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    system: Mapped[str] = mapped_column(String(255), nullable=True)
+
+    uuid: Mapped[str] = mapped_column(
+        String(36),
+        unique=True,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
     name_pc: Mapped[str] = mapped_column(String(255))
-    user_name: Mapped[str] = mapped_column(String(255), nullable=True)
-    ip_addr: Mapped[str] = mapped_column(String(15), nullable=True)
 
     department_id: Mapped[int] = mapped_column(
         ForeignKey("departments.id", ondelete="CASCADE")
@@ -48,34 +63,48 @@ class Agent(Base):
 
     department: Mapped["Department"] = relationship(back_populates="agents")
 
-    # Связь с дополнительными данными
     additional_data: Mapped["AgentAdditionalData"] = relationship(
-        back_populates="agent", uselist=False, cascade="all, delete-orphan"
+        back_populates="agent",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
 
+    # ====== токен для аутентификации Go-агента ======
+    token: Mapped[str] = mapped_column(String(128), nullable=False, default="")
 
-class DiskInfo(BaseModel):
-    name: str
-    size: int
-    free: int
+    def set_token(self, value: str):
+        self.token = value
+
+    def verify_token(self, value: str) -> bool:
+        return self.token == value
+
+    # ====== Статус и онлайн ======
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+from typing import Any, Dict, List, Optional
 
 
 class AgentAdditionalData(Base):
     __tablename__ = "agent_additional_data"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"))
+    agent_id: Mapped[int] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), unique=True
+    )
     agent: Mapped["Agent"] = relationship(back_populates="additional_data")
 
-    # Массив дисков (каждый диск представлен отдельным объектом)
-    disks: Mapped[list[DiskInfo]] = mapped_column(JSON)
+    # Системная информация
+    system: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    user_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ip_addr: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
 
-    # Информация о памяти
-    total_memory: Mapped[int] = mapped_column(nullable=True)
-    available_memory: Mapped[int] = mapped_column(nullable=True)
-
-    # Внешний IP
-    external_ip: Mapped[str] = mapped_column(String(15), nullable=True)
+    # Ресурсы
+    disks: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+    total_memory: Mapped[Optional[int]] = mapped_column(nullable=True)
+    available_memory: Mapped[Optional[int]] = mapped_column(nullable=True)
+    external_ip: Mapped[Optional[str]] = mapped_column(String(15), nullable=True)
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

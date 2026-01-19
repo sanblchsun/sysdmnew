@@ -1,3 +1,4 @@
+# app/api/pages.py
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from fastapi.templating import Jinja2Templates
@@ -35,26 +36,27 @@ async def top_panel(
     columns = [" ", "Имя ПК", "Имя сотрудника", "IP", "Компания", "Отдел"]
 
     if target_id is not None and target_type is not None:
-        # Очистка пробелов
         target_type = target_type.strip()
         try:
             target_id = int(str(target_id).strip())
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid target_id")
 
-        # Общий запрос
+        from app.models import AgentAdditionalData
+
         common_query = (
             select(
                 Agent.id,
-                Agent.system,
                 Agent.name_pc,
-                Agent.user_name,
-                Agent.ip_addr,
+                AgentAdditionalData.system,
+                AgentAdditionalData.user_name,
+                AgentAdditionalData.ip_addr,
                 Company.name.label("company_name"),
                 Department.name.label("department_name"),
             )
             .join(Agent.department)
             .join(Department.company)
+            .outerjoin(Agent.additional_data)
         )
 
         if target_type == "company":
@@ -66,8 +68,6 @@ async def top_panel(
 
         result = await session.execute(stmt)
         agents = result.all()
-
-        logger.debug(f"Agents loaded: {agents}")
 
     return templates.TemplateResponse(
         "partials/top_panel.html",
