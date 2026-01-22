@@ -1,3 +1,4 @@
+# app/api/web_cookie.py
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates

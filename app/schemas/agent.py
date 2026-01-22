@@ -11,16 +11,15 @@ class DiskInfoSchema(BaseModel):
 
 class AgentRegisterIn(BaseModel):
     name_pc: str
-    department_id: int
 
-    system: Optional[str] = None
-    user_name: Optional[str] = None
-    ip_addr: Optional[str] = None
+    system: str | None = None
+    user_name: str | None = None
+    ip_addr: str | None = None
 
-    disks: List[DiskInfoSchema] = []
-    total_memory: Optional[int] = None
-    available_memory: Optional[int] = None
-    external_ip: Optional[str] = None
+    disks: list[DiskInfoSchema] = []
+    total_memory: int | None = None
+    available_memory: int | None = None
+    external_ip: str | None = None
 
 
 class AgentRegisterOut(BaseModel):

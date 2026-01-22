@@ -1,3 +1,4 @@
+# app/api/agent.py
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,22 +17,23 @@ async def register_agent(
     data: AgentRegisterIn,
     session: AsyncSession = Depends(get_db),
 ):
-    # ===== 1. Генерация токена =====
+    # ⚠️ временно хардкод
+    COMPANY_ID = 1
+
     token = secrets.token_urlsafe(32)
 
-    # ===== 2. Создаём Agent =====
     agent = Agent(
         name_pc=data.name_pc,
-        department_id=data.department_id,
+        company_id=COMPANY_ID,
+        department_id=None,
+        token=token,
         is_active=True,
         last_seen=datetime.utcnow(),
     )
-    agent.set_token(token)
 
     session.add(agent)
-    await session.flush()  # получаем agent.id
+    await session.flush()
 
-    # ===== 3. Создаём AgentAdditionalData =====
     additional = AgentAdditionalData(
         agent_id=agent.id,
         system=data.system,
@@ -46,7 +48,6 @@ async def register_agent(
     session.add(additional)
     await session.commit()
 
-    # ===== 4. Возвращаем UUID + token =====
     return AgentRegisterOut(
         agent_uuid=agent.uuid,
         token=token,
