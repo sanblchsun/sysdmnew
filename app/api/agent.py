@@ -37,7 +37,7 @@ async def register_agent(
         system=data.system,
         user_name=data.user_name,
         ip_addr=data.ip_addr,
-        disks=[d.model_dump() for d in data.disks],  # Pydantic → dict
+        disks=[d.model_dump() for d in data.disks],
         total_memory=data.total_memory,
         available_memory=data.available_memory,
         external_ip=data.external_ip,

@@ -33,7 +33,7 @@ async def top_panel(
     session: AsyncSession = Depends(get_db),
 ):
     agents = []
-    columns = [" ", "Имя ПК", "Имя сотрудника", "IP", "Компания", "Отдел"]
+    columns = [" ", "Имя ПК", "Система", "Имя сотрудника", "IP", "Компания", "Отдел"]
 
     if target_id is not None and target_type is not None:
         target_type = target_type.strip()
