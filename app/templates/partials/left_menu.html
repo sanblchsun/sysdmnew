@@ -5,19 +5,21 @@
     разделители
   </button>
   <br />
-  <button id="toggle-all-btn" onclick="toggleAll()">Развернуть всё</button>
+  <button id="toggle-all-btn" hx-on="click: toggleAll()">Развернуть всё</button>
 </span>
 
-<br />
-<br />
+<br /><br />
 
 {% macro render_node(node) %}
 <li>
   {% if node.children %}
   <div class="node">
-    <span class="arrow" onclick="toggleNode('{{ node.name_id }}', this)"
+    <!-- Стрелка раскрытия -->
+    <span class="arrow" hx-on="click: toggleNode('{{ node.name_id }}', this)"
       >▶</span
     >
+
+    <!-- Label -->
     <a
       class="label"
       data-node-type="{{ node.type }}"

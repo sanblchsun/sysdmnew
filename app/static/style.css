@@ -111,61 +111,93 @@ body {
   overflow: auto;
 }
 
-/* Дерево слева */
-ul {
-  list-style: none;
-  padding-left: 20px;
-  margin: 0;
+/* Дерево слева ====================================================================*/
+/* ===== Скрытые списки ===== */
+.collapsible {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
 }
 
+/* ===== Стрелки ===== */
+.arrow {
+  cursor: pointer;
+  width: 1em;
+  display: inline-block;
+  transition: transform 0.25s ease;
+  user-select: none;
+}
+.arrow.expanded {
+  transform: rotate(90deg);
+}
+
+/* ===== Node ===== */
 .node {
   display: flex;
   align-items: center;
   user-select: none;
 }
-
-/* Наведение на узел дерева */
 .node:hover {
-  background-color: #3b3b3b; /* Темно-серый оттенок при наведении */
-  color: white; /* Белый текст при наведении */
+  background-color: #3b3b3b;
+  color: #fff;
 }
-
-/* Наведение на стрелку раскрытия узла */
 .arrow:hover {
-  color: #ffc107; /* Желтая стрелочка при наведении */
+  color: #ffc107;
 }
-
-/* Наведение на label узла */
 .label:hover {
-  text-decoration: underline; /* Подчеркивание при наведении */
+  text-decoration: underline;
 }
 
-.arrow {
-  cursor: pointer;
-  width: 1em;
-  margin-right: 6px;
-  transition: transform 0.2s ease;
+/* ===== Label активного узла ===== */
+.label.is-active {
+  background-color: #2f55c0;
+  color: #fff;
+  border-radius: 4px;
+  padding: 2px 6px;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
 }
 
-.arrow.expanded {
-  transform: rotate(90deg);
-}
-
-.label {
-  cursor: default;
-}
-
+/* ===== Плавное toggleAll ===== */
 .collapsible {
-  overflow: hidden;
-  max-height: 0;
-  transition: max-height 0.25s ease;
+  transition: max-height 0.3s ease;
 }
 
-.collapsible.expanded {
-  max-height: 2000px;
+/* ===== Кнопки ===== */
+#toggle-all-btn,
+#reset-splitters-btn {
+  min-height: 50px;
+  min-width: 130px;
+  height: 5%;
+  background-color: #2f55c0;
+  color: #fff;
+  overflow: auto;
+  padding: 0.5rem;
+  margin: 1%;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+#toggle-all-btn:hover,
+#reset-splitters-btn:hover {
+  background-color: #3f70d0;
 }
 
-/* Красивая таблица справа сверху */
+/* ===== Адаптив ===== */
+@media screen and (max-width: 600px) {
+  .label {
+    font-size: 14px;
+  }
+  #toggle-all-btn,
+  #reset-splitters-btn {
+    font-size: 14px;
+    min-width: 100px;
+  }
+}
+
+/* Красивая таблица справа сверху ========================================== */
 .agents-table {
   width: 100%;
   border-collapse: collapse;
