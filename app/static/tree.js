@@ -1,7 +1,8 @@
+// app/static/tree.js
 const STORAGE_KEY = "tree-state";
 let allExpanded = false;
 
-const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || {});
+const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
 
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));

@@ -185,33 +185,3 @@ function resetSplitters() {
     localStorage.setItem("topPanelHeightPercent", "50");
   }
 }
-
-/* =======================
-   Bind reset button
-   ======================= */
-function bindResetButton() {
-  const btn = document.getElementById("reset-splitters-btn");
-
-  if (!btn) {
-    console.warn("reset-splitters-btn not found");
-    return;
-  }
-
-  // защита от двойного навешивания
-  if (btn.dataset.bound === "1") return;
-
-  btn.addEventListener("click", resetSplitters);
-  btn.dataset.bound = "1";
-
-  console.log("reset-splitters-btn bound");
-}
-
-/* =======================
-   Initial bind
-   ======================= */
-window.addEventListener("DOMContentLoaded", bindResetButton);
-
-/* =======================
-   HTMX rebind
-   ======================= */
-document.addEventListener("htmx:afterSwap", bindResetButton);
