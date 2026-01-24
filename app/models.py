@@ -55,12 +55,21 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    machine_uid: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
     uuid: Mapped[str] = mapped_column(
         String(36),
         unique=True,
         index=True,
         default=lambda: str(uuid.uuid4()),
     )
+
     name_pc: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Связь с Company
