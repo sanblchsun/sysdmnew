@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -23,6 +22,9 @@ GOARCH = "amd64"
 
 # ===================== HELPERS =====================
 def slugify(name: str) -> str:
+    """
+    Преобразует имя компании в "slug"
+    """
     return name.lower().replace(" ", "_").replace("-", "_")
 
 
@@ -30,15 +32,15 @@ def slugify(name: str) -> str:
 def build_exe(company_slug: str, config: dict) -> None:
     """
     Собирает Windows exe для конкретной компании
-    с вшивкой CompanyID, ServerURL и BuildSlug.
+    с вшивкой CompanyIDStr, ServerURL и BuildSlug.
     """
     output_exe = DIST_DIR / f"agent_{company_slug}.exe"
 
     # ldflags для передачи compile-time переменных в Go
     ldflags = (
-        f"-X 'main.CompanyID={config['company_id']}' "
-        f"-X 'main.ServerURL={config['server_url']}' "
-        f"-X 'main.BuildSlug={company_slug}'"
+        f"-X main.CompanyIDStr={config['company_id']} "
+        f"-X main.ServerURL={config['server_url']} "
+        f"-X main.BuildSlug={company_slug}"
     )
 
     print(f"[+] Building {output_exe.name}")

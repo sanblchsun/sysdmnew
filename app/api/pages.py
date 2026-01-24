@@ -37,14 +37,11 @@ async def top_panel(
 
     if target_id is not None and target_type is not None:
         target_type = target_type.strip()
-        try:
-            target_id = int(str(target_id).strip())
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid target_id")
+        target_id = int(target_id)
 
         from app.models import AgentAdditionalData
 
-        common_query = (
+        stmt = (
             select(
                 Agent.id,
                 Agent.name_pc,
@@ -54,15 +51,23 @@ async def top_panel(
                 Company.name.label("company_name"),
                 Department.name.label("department_name"),
             )
-            .join(Agent.department)
-            .join(Department.company)
-            .outerjoin(Agent.additional_data)
+            .outerjoin(Department, Agent.department_id == Department.id)
+            .outerjoin(Company, Agent.company_id == Company.id)
+            .outerjoin(AgentAdditionalData, AgentAdditionalData.agent_id == Agent.id)
         )
 
         if target_type == "company":
-            stmt = common_query.where(Company.id == target_id)
+            stmt = stmt.where(Company.id == target_id)
+
         elif target_type == "department":
-            stmt = common_query.where(Department.id == target_id)
+            stmt = stmt.where(Department.id == target_id)
+
+        elif target_type == "unassigned":
+            stmt = stmt.where(
+                Company.id == target_id,
+                Agent.department_id.is_(None),
+            )
+
         else:
             raise HTTPException(status_code=400, detail="Invalid target_type")
 
@@ -71,7 +76,11 @@ async def top_panel(
 
     return templates.TemplateResponse(
         "partials/top_panel.html",
-        {"request": request, "agents": agents, "agent_columns": columns},
+        {
+            "request": request,
+            "agents": agents,
+            "agent_columns": columns,
+        },
     )
 
 

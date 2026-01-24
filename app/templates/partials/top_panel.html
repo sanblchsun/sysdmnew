@@ -1,5 +1,5 @@
 <!-- app/templates/partials/top_panel.html -->
-{% if agent_columns %}
+{% if agents %}
 <table class="agents-table">
   <thead>
     <tr>
@@ -15,29 +15,26 @@
       hx-get="/ui/bottom-panel?agent_id={{ agent.id }}"
       hx-target="#bottom-right"
       hx-swap="innerHTML"
-      class="{% if agent.id|string == request.query_params.get('agent_id') %}is-active{% endif %}"
+      data-hx-indicator="#loading-indicator"
     >
       <td>
-        {% if "linux" in agent.system.lower() %}
-        <span class="icon-class icon-linux"></span>
-        {% elif "mac" in agent.system.lower() or "apple" in agent.system.lower()
-        %}
-        <span class="icon-class icon-apple"></span>
-        {% elif "windows" in agent.system.lower() %}
-        <span class="icon-class icon-windows"></span>
-        {% else %}
-        <span>-</span>
-        {% endif %}
+        {% if agent.system and "linux" in agent.system.lower() %}
+        <span class="icon-class icon-linux"></span> {% elif agent.system and
+        "mac" in agent.system.lower() %}
+        <span class="icon-class icon-apple"></span> {% elif agent.system and
+        "windows" in agent.system.lower() %}
+        <span class="icon-class icon-windows"></span> {% else %}
+        <span>-</span> {% endif %}
       </td>
       <td>{{ agent.name_pc }}</td>
-      <td>{{ agent.user_name }}</td>
-      <td>{{ agent.ip_addr }}</td>
+      <td>{{ agent.user_name or "-" }}</td>
+      <td>{{ agent.ip_addr or "-" }}</td>
       <td>{{ agent.company_name }}</td>
-      <td>{{ agent.department_name }}</td>
+      <td>{{ agent.department_name or "Без отдела" }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<div>Выберите Company или Department, чтобы увидеть агентов</div>
+<div class="empty-panel">Выберите Company / Department / Unassigned слева</div>
 {% endif %}

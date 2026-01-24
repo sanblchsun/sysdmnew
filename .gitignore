@@ -1,4 +1,5 @@
 # Python
+builder/dist/agents/
 migrations/versions/
 test/
 certbot/
