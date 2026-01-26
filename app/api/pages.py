@@ -1,5 +1,6 @@
 # app/api/pages.py
 from typing import Optional
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from fastapi.templating import Jinja2Templates
 from loguru import logger
@@ -7,11 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from app.database import get_db
-from app.models import Agent, Company, Department
+from app.models import Agent, AgentAdditionalData, Company, Department
 from app.repositories.tree import get_tree
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+
+OFFLINE_AFTER = timedelta(minutes=3)
 
 
 # -------------------- LEFT MENU --------------------
@@ -33,46 +37,67 @@ async def top_panel(
     session: AsyncSession = Depends(get_db),
 ):
     agents = []
-    columns = ["---", "Имя ПК", "Имя сотрудника", "IP", "Компания", "Отдел"]
+    columns = [
+        "---",
+        "Имя ПК",
+        "Имя сотрудника",
+        "IP",
+        "Компания",
+        "Отдел",
+        "Online",
+    ]
 
     if target_id is not None and target_type is not None:
-        target_type = target_type.strip()
         target_id = int(target_id)
-
-        from app.models import AgentAdditionalData
 
         stmt = (
             select(
                 Agent.id,
                 Agent.name_pc,
+                Agent.last_seen,
                 AgentAdditionalData.system,
                 AgentAdditionalData.user_name,
                 AgentAdditionalData.ip_addr,
                 Company.name.label("company_name"),
                 Department.name.label("department_name"),
             )
+            .outerjoin(AgentAdditionalData, AgentAdditionalData.agent_id == Agent.id)
             .outerjoin(Department, Agent.department_id == Department.id)
             .outerjoin(Company, Agent.company_id == Company.id)
-            .outerjoin(AgentAdditionalData, AgentAdditionalData.agent_id == Agent.id)
         )
 
         if target_type == "company":
             stmt = stmt.where(Company.id == target_id)
-
         elif target_type == "department":
             stmt = stmt.where(Department.id == target_id)
-
         elif target_type == "unassigned":
             stmt = stmt.where(
                 Company.id == target_id,
                 Agent.department_id.is_(None),
             )
-
         else:
             raise HTTPException(status_code=400, detail="Invalid target_type")
 
         result = await session.execute(stmt)
-        agents = result.all()
+
+        now = datetime.utcnow()
+        for row in result.all():
+            is_online = (
+                row.last_seen is not None and now - row.last_seen < OFFLINE_AFTER
+            )
+
+            agents.append(
+                {
+                    "id": row.id,
+                    "name_pc": row.name_pc,
+                    "system": row.system,
+                    "user_name": row.user_name,
+                    "ip_addr": row.ip_addr,
+                    "company_name": row.company_name,
+                    "department_name": row.department_name,
+                    "is_online": is_online,
+                }
+            )
 
     return templates.TemplateResponse(
         "partials/top_panel.html",

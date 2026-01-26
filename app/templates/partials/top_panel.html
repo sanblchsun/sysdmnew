@@ -15,8 +15,8 @@
       hx-get="/ui/bottom-panel?agent_id={{ agent.id }}"
       hx-target="#bottom-right"
       hx-swap="innerHTML"
-      data-hx-indicator="#loading-indicator"
     >
+      <!-- OS -->
       <td>
         {% if agent.system and "linux" in agent.system.lower() %}
         <span class="icon-class icon-linux"></span> {% elif agent.system and
@@ -26,11 +26,20 @@
         <span class="icon-class icon-windows"></span> {% else %}
         <span>-</span> {% endif %}
       </td>
+
       <td>{{ agent.name_pc }}</td>
       <td>{{ agent.user_name or "-" }}</td>
       <td>{{ agent.ip_addr or "-" }}</td>
       <td>{{ agent.company_name }}</td>
       <td>{{ agent.department_name or "Без отдела" }}</td>
+      <!-- ONLINE -->
+      <td>
+        {% if agent.is_online %}
+        <span style="color: #22c55e">●</span>
+        {% else %}
+        <span style="color: #ef4444">●</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
