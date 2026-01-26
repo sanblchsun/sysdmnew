@@ -44,6 +44,8 @@ def build_exe(company_slug: str, config: dict) -> None:
         f"-X main.BuildSlug={company_slug}"
     )
 
+    print("LDFLAGS:", " ".join(ldflags))
+
     print(f"[+] Building {output_exe.name}")
 
     subprocess.run(

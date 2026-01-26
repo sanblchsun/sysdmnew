@@ -100,7 +100,7 @@ async def bottom_panel(
         )
         result = await session.execute(stmt)
         agent = result.scalars().first()
-
+    logger.debug(agent)
     return templates.TemplateResponse(
         "partials/bottom_panel.html",
         {"request": request, "agent": agent},
