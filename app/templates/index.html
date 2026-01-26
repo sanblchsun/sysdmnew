@@ -14,8 +14,7 @@
     <div
       id="top-right"
       hx-get="/ui/top-panel{% if request.url.query %}?{{ request.url.query }}{% endif %}"
-      hx-trigger="load"
-      hx-trigger="every 10s"
+      hx-trigger="load, every 10s"
       hx-target="this"
     ></div>
 

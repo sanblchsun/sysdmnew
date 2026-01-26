@@ -1,0 +1,27 @@
+1️⃣ Установить Go 1.23.4 (пример)
+sudo rm -rf /usr/local/go
+
+wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
+
+2️⃣ PATH (если уже есть — пропусти)
+export PATH=/usr/local/go/bin:$PATH
+
+3️⃣ Зафиксировать toolchain
+go env -w GOTOOLCHAIN=local
+
+4️⃣ Проверка
+go version
+# go version go1.23.4 linux/amd64
+
+5️⃣ go.mod (актуальный и правильный)
+module agent
+
+go 1.23.0
+
+require github.com/shirou/gopsutil/v4 v4.25.9
+
+6️⃣ Сборка
+cd builder/agent/
+go mod tidy
+python -m builder.build_agents
