@@ -1,66 +1,60 @@
+// builder/agent/cmd/agent/main.go
 package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/user"
 	"runtime"
 	"time"
+
+	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/mem"
 )
 
-/*
-Эти переменные ЗАПОЛНЯЮТСЯ через -ldflags в builder/build_agents.py
-*/
+// ========================
+// Compile-time variables через ldflags
+// ========================
 var (
 	CompanyIDStr string
 	ServerURL    string
 	BuildSlug    string
 )
 
-const (
-	identityFile   = "agent_identity.json"
-	machineUIDFile = "machine_uid"
-)
-
-/*
-========================
-UTILS
-========================
-*/
-
-func fatal(msg string, err error) {
-	if err != nil {
-		fmt.Printf("[FATAL] %s: %v\n", msg, err)
-	} else {
-		fmt.Printf("[FATAL] %s\n", msg)
-	}
-	os.Exit(1)
-}
-
+// ========================
+// Machine UID
+// ========================
 func loadOrCreateMachineUID() string {
-	if data, err := os.ReadFile(machineUIDFile); err == nil {
+	const filename = "machine_uid"
+
+	data, err := os.ReadFile(filename)
+	if err == nil {
 		return string(bytes.TrimSpace(data))
 	}
 
 	uid := fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
-	if err := os.WriteFile(machineUIDFile, []byte(uid), 0644); err != nil {
-		fatal("cannot write machine_uid", err)
-	}
+	_ = os.WriteFile(filename, []byte(uid), 0644)
+
 	return uid
 }
 
+// ========================
+// Локальный IP
+// ========================
 func getLocalIP() string {
-	ifaces, _ := net.Interfaces()
-	for _, iface := range ifaces {
-		addrs, _ := iface.Addrs()
-		for _, addr := range addrs {
-			if ipnet, ok := addr.(*net.IPNet); ok &&
-				!ipnet.IP.IsLoopback() &&
-				ipnet.IP.To4() != nil {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
 				return ipnet.IP.String()
 			}
 		}
@@ -68,152 +62,162 @@ func getLocalIP() string {
 	return ""
 }
 
-/*
-========================
-IDENTITY
-========================
-*/
-
-type Identity struct {
-	UUID  string `json:"agent_uuid"`
-	Token string `json:"token"`
-}
-
-func loadIdentity() (*Identity, error) {
-	data, err := os.ReadFile(identityFile)
+// ========================
+// Внешний IP через ipify
+// ========================
+func getExternalIP() string {
+	resp, err := http.Get("https://api.ipify.org")
 	if err != nil {
-		return nil, err
-	}
-	var id Identity
-	err = json.Unmarshal(data, &id)
-	if err != nil {
-		return nil, err
-	}
-	if id.UUID == "" || id.Token == "" {
-		return nil, fmt.Errorf("identity file invalid")
-	}
-	return &id, nil
-}
-
-func saveIdentity(id *Identity) {
-	data, _ := json.MarshalIndent(id, "", "  ")
-	_ = os.WriteFile(identityFile, data, 0600)
-}
-
-/*
-========================
-API
-========================
-*/
-
-func registerAgent(payload map[string]interface{}) *Identity {
-	body, _ := json.Marshal(payload)
-
-	resp, err := http.Post(
-		ServerURL+"/api/agent/register",
-		"application/json",
-		bytes.NewBuffer(body),
-	)
-	if err != nil {
-		fatal("register request failed", err)
+		return ""
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		fatal(fmt.Sprintf("register failed, status %d", resp.StatusCode), nil)
-	}
-
-	var res Identity
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		fatal("cannot decode register response", err)
-	}
-
-	if res.UUID == "" || res.Token == "" {
-		fatal("register response missing uuid/token", nil)
-	}
-
-	fmt.Println("[INFO] registered agent:", res.UUID)
-	return &res
+	body, _ := io.ReadAll(resp.Body)
+	return string(body)
 }
 
-func sendHeartbeat(id *Identity) {
-	url := fmt.Sprintf(
-		"%s/api/agent/heartbeat?uuid=%s&token=%s",
-		ServerURL,
-		id.UUID,
-		id.Token,
-	)
+// ========================
+// Вспомогательная функция для HTTP POST
+// ========================
+func postJSON(url string, payload interface{}) (*http.Response, error) {
+	data, _ := json.Marshal(payload)
 
-	resp, err := http.Post(url, "application/json", nil)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
 	if err != nil {
-		fmt.Println("[WARN] heartbeat error:", err)
-		return
+		return nil, err
 	}
-	resp.Body.Close()
+	req.Header.Set("Content-Type", "application/json")
 
-	if resp.StatusCode != 200 {
-		fmt.Println("[WARN] heartbeat status:", resp.StatusCode)
-		return
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // ⚠️ для dev / тест
+		},
+		Timeout: 15 * time.Second,
 	}
 
-	fmt.Println("[OK] heartbeat", time.Now().Format(time.RFC3339))
+	return client.Do(req)
 }
 
-/*
-========================
-MAIN
-========================
-*/
+// ========================
+// Сбор системной информации
+// ========================
+func collectTelemetry() map[string]interface{} {
+	telemetry := map[string]interface{}{
+		"system":           runtime.GOOS,
+		"user_name":        os.Getenv("USERNAME"),
+		"ip_addr":          getLocalIP(),
+		"disks":            []map[string]interface{}{},
+		"total_memory":     0,
+		"available_memory": 0,
+		"external_ip":      getExternalIP(),
+	}
 
+	// Память
+	if vm, err := mem.VirtualMemory(); err == nil {
+		telemetry["total_memory"] = int(vm.Total / (1024 * 1024))         // МБ
+		telemetry["available_memory"] = int(vm.Available / (1024 * 1024)) // МБ
+	}
+
+	// Диски
+	if parts, err := disk.Partitions(true); err == nil {
+		disks := []map[string]interface{}{}
+		for _, p := range parts {
+			if usage, err := disk.Usage(p.Mountpoint); err == nil {
+				disks = append(disks, map[string]interface{}{
+					"name": p.Mountpoint,
+					"size": int(usage.Total / (1024 * 1024 * 1024)), // ГБ
+					"free": int(usage.Free / (1024 * 1024 * 1024)),  // ГБ
+				})
+			}
+		}
+		telemetry["disks"] = disks
+	}
+
+	return telemetry
+}
+
+// ========================
+// Main
+// ========================
 func main() {
-	fmt.Println("=== RMM AGENT START ===")
+	fmt.Println("Agent starting...")
+	fmt.Printf("CompanyID: %s\nServerURL: %s\nBuildSlug: %s\n", CompanyIDStr, ServerURL, BuildSlug)
 
 	if ServerURL == "" {
-		fatal("ServerURL is empty (ldflags not applied)", nil)
+		log.Fatalln("ServerURL не задан! Проверь сборку через Python ldflags")
 	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		fatal("cannot get hostname", err)
+		hostname = "unknown-pc"
 	}
 
 	machineUID := loadOrCreateMachineUID()
-	fmt.Println("[INFO] machine_uid:", machineUID)
 
-	username := "unknown"
-	if u, err := user.Current(); err == nil {
-		username = u.Username
-	}
-
+	// -----------------------
+	// 1. Регистрация
+	// -----------------------
 	registerPayload := map[string]interface{}{
-		"machine_uid":      machineUID,
-		"name_pc":          hostname,
-		"system":           runtime.GOOS,
-		"user_name":        username,
-		"ip_addr":          getLocalIP(),
-		"disks":            []interface{}{},
-		"total_memory":     nil,
-		"available_memory": nil,
-		"external_ip":      "",
+		"name_pc":     hostname,
+		"machine_uid": machineUID,
 	}
 
-	var identity *Identity
-
-	id, err := loadIdentity()
+	resp, err := postJSON(ServerURL+"/api/agent/register", registerPayload)
 	if err != nil {
-		fmt.Println("[INFO] no identity found, registering")
-		identity = registerAgent(registerPayload)
-		saveIdentity(identity)
-	} else {
-		identity = id
-		fmt.Println("[INFO] loaded identity:", identity.UUID)
+		log.Println("Ошибка при регистрации агента:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Println("Регистрация не удалась, статус:", resp.Status)
+		return
 	}
 
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	var registerResult map[string]interface{}
+	body, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(body, &registerResult); err != nil {
+		log.Println("Ошибка чтения ответа регистрации:", err)
+		return
+	}
+	fmt.Println("Registered:", registerResult)
 
-	for {
-		sendHeartbeat(identity)
-		<-ticker.C
+	uuid, _ := registerResult["agent_uuid"].(string)
+	token, _ := registerResult["token"].(string)
+
+	// -----------------------
+	// 2. Отправка системных данных (telemetry) с uuid/token в query
+	// -----------------------
+	telemetry := collectTelemetry()
+
+	// 🔹 Логируем JSON перед отправкой
+	telemetryJSON, _ := json.MarshalIndent(telemetry, "", "  ")
+	fmt.Println("Отправляем telemetry JSON:")
+	fmt.Println(string(telemetryJSON))
+
+	telemetryURL := fmt.Sprintf("%s/api/agent/telemetry?uuid=%s&token=%s", ServerURL, uuid, token)
+
+	resp, err = postJSON(telemetryURL, telemetry)
+	if err != nil {
+		log.Println("Ошибка при отправке telemetry:", err)
+	} else {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Println("Ответ сервера:", resp.Status)
+		fmt.Println("Тело ответа:", string(body))
+
+		if resp.StatusCode == 200 {
+			fmt.Println("Telemetry успешно отправлена")
+		} else {
+			fmt.Println("Ошибка telemetry, статус:", resp.Status)
+		}
+	}
+
+	// -----------------------
+	// 3. Heartbeat
+	// -----------------------
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		fmt.Println("Agent heartbeat:", time.Now())
 	}
 }

@@ -7,7 +7,12 @@ from datetime import datetime
 from app.core.auth_agent import get_agent_by_token
 from app.database import get_db
 from app.models import Agent, AgentAdditionalData
-from app.schemas.agent import AgentRegisterIn, AgentRegisterOut, DiskInfoSchema
+from app.schemas.agent import (
+    AgentRegisterIn,
+    AgentRegisterOut,
+    AgentTelemetryIn,
+    DiskInfoSchema,
+)
 from sqlalchemy import select
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -74,16 +79,6 @@ async def agent_heartbeat(
 ):
     # agent уже проверен и last_seen обновлён
     return {"status": "ok", "agent_uuid": agent.uuid, "last_seen": agent.last_seen}
-
-
-class AgentTelemetryIn(BaseModel):
-    system: str | None = None
-    user_name: str | None = None
-    ip_addr: str | None = None
-    disks: list[DiskInfoSchema] = []
-    total_memory: int | None = None
-    available_memory: int | None = None
-    external_ip: str | None = None
 
 
 @router.post("/telemetry")
