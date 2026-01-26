@@ -19,12 +19,14 @@
       <!-- OS -->
       <td>
         {% if agent.system and "linux" in agent.system.lower() %}
-        <span class="icon-class icon-linux"></span> {% elif agent.system and
-        "mac" in agent.system.lower() %}
-        <span class="icon-class icon-apple"></span> {% elif agent.system and
-        "windows" in agent.system.lower() %}
-        <span class="icon-class icon-windows"></span> {% else %}
-        <span>-</span> {% endif %}
+        <span class="icon-class icon-linux"></span>
+        {% elif agent.system and "mac" in agent.system.lower() %}
+        <span class="icon-class icon-apple"></span>
+        {% elif agent.system and "windows" in agent.system.lower() %}
+        <span class="icon-class icon-windows"></span>
+        {% else %}
+        <span>-</span>
+        {% endif %}
       </td>
 
       <td>{{ agent.name_pc }}</td>
@@ -32,6 +34,7 @@
       <td>{{ agent.ip_addr or "-" }}</td>
       <td>{{ agent.company_name }}</td>
       <td>{{ agent.department_name or "Без отдела" }}</td>
+
       <!-- ONLINE -->
       <td>
         {% if agent.is_online %}

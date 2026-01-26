@@ -15,7 +15,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
 
-OFFLINE_AFTER = timedelta(minutes=3)
+OFFLINE_AFTER = timedelta(minutes=1)
 
 
 # -------------------- LEFT MENU --------------------
@@ -54,7 +54,7 @@ async def top_panel(
             select(
                 Agent.id,
                 Agent.name_pc,
-                Agent.last_seen,
+                Agent.last_seen,  # серверное время последнего heartbeat
                 AgentAdditionalData.system,
                 AgentAdditionalData.user_name,
                 AgentAdditionalData.ip_addr,
@@ -82,8 +82,9 @@ async def top_panel(
 
         now = datetime.utcnow()
         for row in result.all():
+            # Онлайн считается только на основе серверного last_seen
             is_online = (
-                row.last_seen is not None and now - row.last_seen < OFFLINE_AFTER
+                row.last_seen is not None and (now - row.last_seen) < OFFLINE_AFTER
             )
 
             agents.append(
