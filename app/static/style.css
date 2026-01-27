@@ -355,6 +355,21 @@ body {
   content: "\0F1345";
 }
 
+.online-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.online-dot.online::before {
+  color: #53e60f;
+  content: "\0F00DA";
+}
+.online-dot.offline::before {
+  color: #e71710;
+  content: "\0F00DA";
+}
+
 /* Адаптивные размеры иконок */
 @media (max-width: 768px) {
   .icon-class {

@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from fastapi.templating import Jinja2Templates
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import joinedload
 from app.database import get_db
 from app.models import Agent, AgentAdditionalData, Company, Department
@@ -141,3 +141,44 @@ async def bottom_panel(
         "partials/bottom_panel.html",
         {"request": request, "agent": agent},
     )
+
+
+@router.get("/api/agents/status")
+async def agents_status(
+    target_id: int = Query(...),
+    target_type: str = Query(...),
+    session: AsyncSession = Depends(get_db),
+):
+    conditions = []
+
+    if target_type == "company":
+        conditions.append(Agent.company_id == target_id)
+
+    elif target_type == "department":
+        conditions.append(Agent.department_id == target_id)
+
+    elif target_type == "unassigned":
+        conditions.append(
+            and_(
+                Agent.company_id == target_id,
+                Agent.department_id.is_(None),
+            )
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid target_type")
+
+    stmt = select(Agent.id, Agent.last_seen).where(*conditions)
+
+    now = datetime.utcnow()
+    result = await session.execute(stmt)
+
+    agents = {}
+    for agent_id, last_seen in result.all():
+        agents[agent_id] = {
+            "online": bool(last_seen and (now - last_seen) < OFFLINE_AFTER)
+        }
+
+    return {
+        "ts": now.isoformat(),
+        "agents": agents,
+    }

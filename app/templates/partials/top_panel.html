@@ -37,11 +37,10 @@
 
       <!-- ONLINE -->
       <td>
-        {% if agent.is_online %}
-        <span style="color: #22c55e">●</span>
-        {% else %}
-        <span style="color: #ef4444">●</span>
-        {% endif %}
+        <span
+          class="icon-class online-dot {% if agent.is_online %}online{% else %}offline{% endif %}"
+          title="Online status"
+        ></span>
       </td>
     </tr>
     {% endfor %}
