@@ -1,4 +1,3 @@
-// builder/agent/cmd/agent/main.go
 package main
 
 import (
@@ -18,55 +17,73 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-// ========================
-// Compile-time variables через ldflags
-// ========================
+/*
+=====================================
+
+	Compile-time variables (ldflags)
+
+=====================================
+*/
 var (
 	CompanyIDStr string
 	ServerURL    string
 	BuildSlug    string
 )
 
-// ========================
-// Machine UID
-// ========================
+/*
+=====================================
+
+	HTTP client
+
+=====================================
+*/
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // dev only
+	},
+}
+
+/*
+=====================================
+
+	Machine UID
+
+=====================================
+*/
 func loadOrCreateMachineUID() string {
 	const filename = "machine_uid"
 
-	data, err := os.ReadFile(filename)
-	if err == nil {
+	if data, err := os.ReadFile(filename); err == nil {
 		return string(bytes.TrimSpace(data))
 	}
 
 	uid := fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
 	_ = os.WriteFile(filename, []byte(uid), 0644)
-
 	return uid
 }
 
-// ========================
-// Локальный IP
-// ========================
+/*
+=====================================
+
+	Network helpers
+
+=====================================
+*/
 func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ""
-	}
+	addrs, _ := net.InterfaceAddrs()
 	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
+		if ipnet, ok := addr.(*net.IPNet); ok &&
+			!ipnet.IP.IsLoopback() &&
+			ipnet.IP.To4() != nil {
+			return ipnet.IP.String()
 		}
 	}
 	return ""
 }
 
-// ========================
-// Внешний IP через ipify
-// ========================
 func getExternalIP() string {
-	resp, err := http.Get("https://api.ipify.org")
+	resp, err := httpClient.Get("https://api.ipify.org")
 	if err != nil {
 		return ""
 	}
@@ -75,57 +92,37 @@ func getExternalIP() string {
 	return string(body)
 }
 
-// ========================
-// Вспомогательная функция для HTTP POST
-// ========================
-func postJSON(url string, payload interface{}) (*http.Response, error) {
-	data, _ := json.Marshal(payload)
+/*
+=====================================
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	Telemetry
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // ⚠️ для dev / тест
-		},
-		Timeout: 15 * time.Second,
-	}
-
-	return client.Do(req)
-}
-
-// ========================
-// Сбор системной информации
-// ========================
+=====================================
+*/
 func collectTelemetry() map[string]interface{} {
 	telemetry := map[string]interface{}{
 		"system":           runtime.GOOS,
 		"user_name":        os.Getenv("USERNAME"),
 		"ip_addr":          getLocalIP(),
+		"external_ip":      getExternalIP(),
 		"disks":            []map[string]interface{}{},
 		"total_memory":     0,
 		"available_memory": 0,
-		"external_ip":      getExternalIP(),
 	}
 
-	// Память
 	if vm, err := mem.VirtualMemory(); err == nil {
-		telemetry["total_memory"] = int(vm.Total / (1024 * 1024))         // МБ
-		telemetry["available_memory"] = int(vm.Available / (1024 * 1024)) // МБ
+		telemetry["total_memory"] = int(vm.Total / (1024 * 1024))
+		telemetry["available_memory"] = int(vm.Available / (1024 * 1024))
 	}
 
-	// Диски
 	if parts, err := disk.Partitions(true); err == nil {
-		disks := []map[string]interface{}{}
+		var disks []map[string]interface{}
 		for _, p := range parts {
 			if usage, err := disk.Usage(p.Mountpoint); err == nil {
 				disks = append(disks, map[string]interface{}{
 					"name": p.Mountpoint,
-					"size": int(usage.Total / (1024 * 1024 * 1024)), // ГБ
-					"free": int(usage.Free / (1024 * 1024 * 1024)),  // ГБ
+					"size": int(usage.Total / (1024 * 1024 * 1024)),
+					"free": int(usage.Free / (1024 * 1024 * 1024)),
 				})
 			}
 		}
@@ -135,89 +132,122 @@ func collectTelemetry() map[string]interface{} {
 	return telemetry
 }
 
-// ========================
-// Main
-// ========================
+/*
+=====================================
+
+	HTTP helpers
+
+=====================================
+*/
+func postJSON(url string, payload interface{}) ([]byte, int, error) {
+	data, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return body, resp.StatusCode, nil
+}
+
+/*
+=====================================
+
+	Heartbeat
+
+=====================================
+*/
+func sendHeartbeat(serverURL, uuid, token string) {
+	url := fmt.Sprintf(
+		"%s/api/agent/heartbeat?uuid=%s&token=%s",
+		serverURL, uuid, token,
+	)
+
+	req, _ := http.NewRequest("POST", url, nil)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Println("heartbeat error:", err)
+		return
+	}
+	resp.Body.Close()
+}
+
+/*
+=====================================
+
+	Main
+
+=====================================
+*/
 func main() {
-	fmt.Println("Agent starting...")
-	fmt.Printf("CompanyID: %s\nServerURL: %s\nBuildSlug: %s\n", CompanyIDStr, ServerURL, BuildSlug)
+	log.Println("Agent starting…")
+	log.Printf("ServerURL=%s Build=%s\n", ServerURL, BuildSlug)
 
 	if ServerURL == "" {
-		log.Fatalln("ServerURL не задан! Проверь сборку через Python ldflags")
+		log.Fatalln("ServerURL is empty (ldflags broken)")
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown-pc"
-	}
-
+	hostname, _ := os.Hostname()
 	machineUID := loadOrCreateMachineUID()
 
-	// -----------------------
-	// 1. Регистрация
-	// -----------------------
+	/*
+		-----------------------------
+		1. Register
+		-----------------------------
+	*/
 	registerPayload := map[string]interface{}{
 		"name_pc":     hostname,
 		"machine_uid": machineUID,
 	}
 
-	resp, err := postJSON(ServerURL+"/api/agent/register", registerPayload)
-	if err != nil {
-		log.Println("Ошибка при регистрации агента:", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		log.Println("Регистрация не удалась, статус:", resp.Status)
-		return
+	body, status, err := postJSON(
+		ServerURL+"/api/agent/register",
+		registerPayload,
+	)
+	if err != nil || status != 200 {
+		log.Fatalln("register failed:", err, status)
 	}
 
-	var registerResult map[string]interface{}
-	body, _ := io.ReadAll(resp.Body)
-	if err := json.Unmarshal(body, &registerResult); err != nil {
-		log.Println("Ошибка чтения ответа регистрации:", err)
-		return
+	var regResp struct {
+		AgentUUID string `json:"agent_uuid"`
+		Token     string `json:"token"`
 	}
-	fmt.Println("Registered:", registerResult)
+	if err := json.Unmarshal(body, &regResp); err != nil {
+		log.Fatalln("invalid register response")
+	}
 
-	uuid, _ := registerResult["agent_uuid"].(string)
-	token, _ := registerResult["token"].(string)
+	log.Println("Registered as", regResp.AgentUUID)
 
-	// -----------------------
-	// 2. Отправка системных данных (telemetry) с uuid/token в query
-	// -----------------------
+	/*
+		-----------------------------
+		2. Telemetry (once)
+		-----------------------------
+	*/
 	telemetry := collectTelemetry()
+	telemetryURL := fmt.Sprintf(
+		"%s/api/agent/telemetry?uuid=%s&token=%s",
+		ServerURL, regResp.AgentUUID, regResp.Token,
+	)
 
-	// 🔹 Логируем JSON перед отправкой
-	telemetryJSON, _ := json.MarshalIndent(telemetry, "", "  ")
-	fmt.Println("Отправляем telemetry JSON:")
-	fmt.Println(string(telemetryJSON))
+	_, _, _ = postJSON(telemetryURL, telemetry)
 
-	telemetryURL := fmt.Sprintf("%s/api/agent/telemetry?uuid=%s&token=%s", ServerURL, uuid, token)
-
-	resp, err = postJSON(telemetryURL, telemetry)
-	if err != nil {
-		log.Println("Ошибка при отправке telemetry:", err)
-	} else {
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Println("Ответ сервера:", resp.Status)
-		fmt.Println("Тело ответа:", string(body))
-
-		if resp.StatusCode == 200 {
-			fmt.Println("Telemetry успешно отправлена")
-		} else {
-			fmt.Println("Ошибка telemetry, статус:", resp.Status)
-		}
-	}
-
-	// -----------------------
-	// 3. Heartbeat
-	// -----------------------
+	/*
+		-----------------------------
+		3. Heartbeat loop
+		-----------------------------
+	*/
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
+
 	for range ticker.C {
-		fmt.Println("Agent heartbeat:", time.Now())
+		sendHeartbeat(ServerURL, regResp.AgentUUID, regResp.Token)
 	}
 }
