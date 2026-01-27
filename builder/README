@@ -24,4 +24,6 @@ require github.com/shirou/gopsutil/v4 v4.25.9
 6️⃣ Сборка
 cd builder/agent/
 go mod tidy
+cd ../..
+Далее в окружении (venv)
 python -m builder.build_agents
