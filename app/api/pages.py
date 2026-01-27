@@ -47,6 +47,16 @@ async def top_panel(
         "Online",
     ]
 
+    if not target_id or not target_type:
+        return templates.TemplateResponse(
+            "partials/top_panel.html",
+            {
+                "request": request,
+                "agents": [],
+                "agent_columns": columns,
+            },
+        )
+
     if target_id is not None and target_type is not None:
         target_id = int(target_id)
 

@@ -1,6 +1,10 @@
 <!-- app/templates/index.html -->
 {% extends "base.html" %} {% block body %}
 <div id="container">
+  <!-- STATE (источник истины для top-panel) -->
+  <input type="hidden" id="target-id" name="target_id" />
+  <input type="hidden" id="target-type" name="target_type" />
+
   <div
     id="left-panel"
     hx-get="/ui/left-menu"

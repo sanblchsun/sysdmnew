@@ -24,12 +24,20 @@
     >
       <!-- НАВИГАЦИЯ -->
       <a
-        hx-get="/ui/top-panel?target_type={{ node.type }}&target_id={{ node.id }}"
+        hx-get="/ui/top-panel"
         hx-target="#top-right"
         hx-swap="innerHTML"
+        hx-trigger="click"
+        hx-include="#target-id,#target-type"
         hx-push-url="/agents?target_type={{ node.type }}&target_id={{ node.id }}"
         hx-indicator="#loading-indicator"
-        hx-on=" htmx:beforeRequest: document.querySelector('#bottom-right').innerHTML = '<div class=&quot;empty-panel&quot;>Выберите агента</div>' "
+        hx-on="
+    click:
+      document.getElementById('target-id').value='{{ node.id }}';
+      document.getElementById('target-type').value='{{ node.type }}';
+      document.getElementById('bottom-right').innerHTML =
+        '<div class=&quot;empty-panel&quot;>Выберите агента</div>';
+  "
       >
         {% if node.type == "company" %} 🏛 {{ node.name }} {% elif node.type ==
         "unassigned" %} 📦 {{ node.name }} {% elif node.type == "department" %}
