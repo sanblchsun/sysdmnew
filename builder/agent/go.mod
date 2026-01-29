@@ -1,8 +1,12 @@
+// builder/agent/go.mod
 module agent
 
 go 1.23.0
 
-require github.com/shirou/gopsutil/v4 v4.25.9
+require (
+	github.com/kardianos/service v1.2.4
+	github.com/shirou/gopsutil/v4 v4.25.9
+)
 
 require (
 	github.com/ebitengine/purego v0.9.0 // indirect

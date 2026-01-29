@@ -4,15 +4,21 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"syscall"
 	"time"
 
+	"github.com/kardianos/service"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
 )
@@ -183,11 +189,23 @@ func sendHeartbeat(serverURL, uuid, token string) {
 /*
 =====================================
 
-	Main
+	Register Response Structure
 
 =====================================
 */
-func main() {
+type RegisterResponse struct {
+	AgentUUID string `json:"agent_uuid"`
+	Token     string `json:"token"`
+}
+
+/*
+=====================================
+
+	Main logic
+
+=====================================
+*/
+func mainLogic() {
 	log.Println("Agent starting…")
 	log.Printf("ServerURL=%s Build=%s\n", ServerURL, BuildSlug)
 
@@ -199,9 +217,9 @@ func main() {
 	machineUID := loadOrCreateMachineUID()
 
 	/*
-		-----------------------------
-		1. Register
-		-----------------------------
+	   -----------------------------
+	   1. Register
+	   -----------------------------
 	*/
 	registerPayload := map[string]interface{}{
 		"name_pc":     hostname,
@@ -216,38 +234,115 @@ func main() {
 		log.Fatalln("register failed:", err, status)
 	}
 
-	var regResp struct {
-		AgentUUID string `json:"agent_uuid"`
-		Token     string `json:"token"`
-	}
-	if err := json.Unmarshal(body, &regResp); err != nil {
+	var Resp RegisterResponse
+	if err := json.Unmarshal(body, &Resp); err != nil {
 		log.Fatalln("invalid register response")
 	}
 
-	log.Println("Registered as", regResp.AgentUUID)
+	log.Println("Registered as", Resp.AgentUUID)
 
 	/*
-		-----------------------------
-		2. Telemetry (once)
-		-----------------------------
+	   -----------------------------
+	   2. Telemetry (once)
+	   -----------------------------
 	*/
 	telemetry := collectTelemetry()
 	telemetryURL := fmt.Sprintf(
 		"%s/api/agent/telemetry?uuid=%s&token=%s",
-		ServerURL, regResp.AgentUUID, regResp.Token,
+		ServerURL, Resp.AgentUUID, Resp.Token,
 	)
 
 	_, _, _ = postJSON(telemetryURL, telemetry)
 
 	/*
-		-----------------------------
-		3. Heartbeat loop
-		-----------------------------
+	   -----------------------------
+	   3. Heartbeat loop
+	   -----------------------------
 	*/
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		sendHeartbeat(ServerURL, regResp.AgentUUID, regResp.Token)
+		sendHeartbeat(ServerURL, Resp.AgentUUID, Resp.Token)
+	}
+}
+
+/*
+=====================================
+
+	Service configuration
+
+=====================================
+*/
+type Program struct{}
+
+func (p *Program) Start(s service.Service) error {
+	go p.run()
+	return nil
+}
+
+func (p *Program) Stop(s service.Service) error {
+	fmt.Println("Stopping the service...")
+	return nil
+}
+
+func (p *Program) run() {
+	mainLogic()
+}
+
+/*
+=====================================
+
+	Entry point
+
+=====================================
+*/
+func main() {
+	svcFlag := flag.Bool("service", false, "Control service mode.")
+	flag.Parse()
+
+	programName := filepath.Base(os.Args[0])
+
+	serviceConfig := &service.Config{
+		Name:        programName,
+		DisplayName: "My Monitoring Agent",
+		Description: "Monitoring agent for system resources.",
+	}
+
+	prg := &Program{}
+	s, err := service.New(prg, serviceConfig)
+	if err != nil {
+		log.Fatalf("Error creating service: %v", err)
+	}
+
+	errs := make(chan error, 5)
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+		errs <- fmt.Errorf("%s", <-c)
+	}()
+
+	if *svcFlag && len(flag.Args()) > 0 {
+		action := strings.Join(flag.Args(), "")
+		switch action {
+		case "install":
+			err = s.Install()
+		case "uninstall":
+			err = s.Uninstall()
+		case "start":
+			err = s.Start()
+		case "stop":
+			err = s.Stop()
+		default:
+			err = fmt.Errorf("Unknown service command '%s'", action)
+		}
+		if err != nil {
+			log.Fatalf("Failed to execute service command: %v", err)
+		}
+		return
+	}
+
+	if err = s.Run(); err != nil {
+		log.Fatalf("Service failed to start: %v", err)
 	}
 }
