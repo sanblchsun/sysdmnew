@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -327,6 +328,16 @@ func main() {
 		switch action {
 		case "install":
 			err = s.Install()
+			if err == nil {
+				// Обновляем тип запуска службы на автоматический
+				updateCmd := exec.Command("sc", "config", programName, "start=", "auto")
+				updateCmd.Stdout = os.Stdout
+				updateCmd.Stderr = os.Stderr
+				err = updateCmd.Run()
+				if err != nil {
+					log.Fatalf("Error setting service start type to 'auto': %v", err)
+				}
+			}
 		case "uninstall":
 			err = s.Uninstall()
 		case "start":
