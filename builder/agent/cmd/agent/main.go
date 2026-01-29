@@ -337,6 +337,15 @@ func main() {
 				if err != nil {
 					log.Fatalf("Error setting service start type to 'auto': %v", err)
 				}
+
+				// Сразу запускаем службу после установки
+				startCmd := exec.Command("sc", "start", programName)
+				startCmd.Stdout = os.Stdout
+				startCmd.Stderr = os.Stderr
+				err = startCmd.Run()
+				if err != nil {
+					log.Fatalf("Error starting service after installation: %v", err)
+				}
 			}
 		case "uninstall":
 			err = s.Uninstall()
