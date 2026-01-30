@@ -219,25 +219,34 @@ func mainLogic() {
 
 	/*
 	   -----------------------------
-	   1. Register
+	   1. Registration attempt
 	   -----------------------------
 	*/
-	registerPayload := map[string]interface{}{
-		"name_pc":     hostname,
-		"machine_uid": machineUID,
-	}
-
-	body, status, err := postJSON(
-		ServerURL+"/api/agent/register",
-		registerPayload,
-	)
-	if err != nil || status != 200 {
-		log.Fatalln("register failed:", err, status)
-	}
-
 	var Resp RegisterResponse
-	if err := json.Unmarshal(body, &Resp); err != nil {
-		log.Fatalln("invalid register response")
+
+	for {
+		registerPayload := map[string]interface{}{
+			"name_pc":     hostname,
+			"machine_uid": machineUID,
+		}
+
+		body, status, err := postJSON(
+			ServerURL+"/api/agent/register",
+			registerPayload,
+		)
+
+		if err != nil || status != 200 {
+			log.Printf("Registration failed due to server issues: %v\n", err)
+			log.Println("Waiting before next try...")
+			time.Sleep(10 * time.Second) // Ждем 10 секунд перед следующей попыткой
+			continue
+		}
+
+		if err := json.Unmarshal(body, &Resp); err != nil {
+			log.Fatalln("Invalid register response format:", err)
+		}
+
+		break // Успех, регистрация пройдена
 	}
 
 	log.Println("Registered as", Resp.AgentUUID)
