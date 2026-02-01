@@ -1,22 +1,18 @@
+// builder/agent/cmd/agent/main.go
 package main
 
 import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/kardianos/service"
@@ -58,8 +54,49 @@ var httpClient = &http.Client{
 
 =====================================
 */
+
+func getExecutableInfo() (string, string, string) {
+	var exePath, exeDir, exeName string
+
+	// Способ 1: os.Executable() (предпочтительный)
+	if path, err := os.Executable(); err == nil {
+		exePath = path
+	} else {
+		// Способ 2: os.Args[0] как fallback
+		if len(os.Args) > 0 {
+			exePath = os.Args[0]
+
+			// Если путь относительный, добавляем текущую директорию
+			if !filepath.IsAbs(exePath) {
+				if wd, err := os.Getwd(); err == nil {
+					exePath = filepath.Join(wd, exePath)
+				}
+			}
+		}
+	}
+
+	// Делаем путь абсолютным и нормализуем
+	if exePath != "" {
+		if absPath, err := filepath.Abs(exePath); err == nil {
+			exePath = absPath
+		}
+
+		// Получаем директорию и имя файла
+		exeDir = filepath.Dir(exePath)
+		exeName = filepath.Base(exePath)
+	}
+
+	return exePath, exeDir, exeName
+}
+
 func loadOrCreateMachineUID() string {
-	const filename = "machine_uid"
+	// Получаем директорию исполняемого файла
+	_, exeDir, _ := getExecutableInfo()
+	if exeDir == "" {
+		exeDir = "." // fallback
+	}
+
+	filename := filepath.Join(exeDir, "machine_uid")
 
 	if data, err := os.ReadFile(filename); err == nil {
 		return string(bytes.TrimSpace(data))
@@ -287,12 +324,13 @@ func mainLogic() {
 type Program struct{}
 
 func (p *Program) Start(s service.Service) error {
+	log.Println("Service is starting...")
 	go p.run()
 	return nil
 }
 
 func (p *Program) Stop(s service.Service) error {
-	fmt.Println("Stopping the service...")
+	log.Println("Service is stopping...")
 	return nil
 }
 
@@ -308,70 +346,89 @@ func (p *Program) run() {
 =====================================
 */
 func main() {
-	svcFlag := flag.Bool("service", false, "Control service mode.")
-	flag.Parse()
-
-	programName := filepath.Base(os.Args[0])
-
-	serviceConfig := &service.Config{
-		Name:        programName,
-		DisplayName: "My Monitoring Agent",
-		Description: "Monitoring agent for system resources.",
+	// Определяем путь к исполняемому файлу
+	exePath, err := os.Executable()
+	if err != nil {
+		log.Fatalf("Failed to get executable path: %v", err)
 	}
 
+	// Получаем абсолютный путь к исполняемому файлу
+	absPath, err := filepath.Abs(exePath)
+	if err != nil {
+		log.Fatalf("Failed to get absolute path: %v", err)
+	}
+
+	// Конфигурация службы с явным указанием аргументов
+	serviceConfig := &service.Config{
+		Name:        "SystemMonitoringAgent",
+		DisplayName: "System Monitoring Agent",
+		Description: "Agent for monitoring system resources and sending telemetry.",
+		Arguments:   []string{},
+		Executable:  absPath,
+	}
+
+	// Создаем объект программы
 	prg := &Program{}
+
+	// Создаем службу
 	s, err := service.New(prg, serviceConfig)
 	if err != nil {
 		log.Fatalf("Error creating service: %v", err)
 	}
 
-	errs := make(chan error, 5)
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
-		errs <- fmt.Errorf("%s", <-c)
-	}()
+	// Проверяем, запущена ли программа как служба
+	if service.Interactive() {
+		// Запущено из командной строки - устанавливаем службу
+		log.Println("Running in interactive mode, installing service...")
 
-	if *svcFlag && len(flag.Args()) > 0 {
-		action := strings.Join(flag.Args(), "")
-		switch action {
-		case "install":
+		// Проверяем, установлена ли уже служба
+		status, err := s.Status()
+		if err != nil && err != service.ErrNotInstalled {
+			log.Printf("Warning: Could not check service status: %v", err)
+		}
+
+		if status == service.StatusUnknown || err == service.ErrNotInstalled {
+			// Служба не установлена - устанавливаем
+			log.Println("Installing service...")
 			err = s.Install()
-			if err == nil {
-				// Обновляем тип запуска службы на автоматический
-				updateCmd := exec.Command("sc", "config", programName, "start=", "auto")
-				updateCmd.Stdout = os.Stdout
-				updateCmd.Stderr = os.Stderr
-				err = updateCmd.Run()
-				if err != nil {
-					log.Fatalf("Error setting service start type to 'auto': %v", err)
-				}
-
-				// Сразу запускаем службу после установки
-				startCmd := exec.Command("sc", "start", programName)
-				startCmd.Stdout = os.Stdout
-				startCmd.Stderr = os.Stderr
-				err = startCmd.Run()
-				if err != nil {
-					log.Fatalf("Error starting service after installation: %v", err)
-				}
+			if err != nil {
+				log.Fatalf("Failed to install service: %v", err)
 			}
-		case "uninstall":
-			err = s.Uninstall()
-		case "start":
+
+			log.Println("Service installed successfully")
+
+			// Запускаем службу
+			log.Println("Starting service...")
 			err = s.Start()
-		case "stop":
-			err = s.Stop()
-		default:
-			err = fmt.Errorf("Unknown service command '%s'", action)
+			if err != nil {
+				log.Printf("Warning: Could not start service: %v", err)
+				log.Println("Service installed but not started. You may need to start it manually.")
+			} else {
+				log.Println("Service started successfully")
+			}
+		} else {
+			// Служба уже установлена - запускаем
+			log.Println("Service already installed, starting...")
+			err = s.Start()
+			if err != nil {
+				log.Fatalf("Failed to start service: %v", err)
+			}
+			log.Println("Service started successfully")
 		}
-		if err != nil {
-			log.Fatalf("Failed to execute service command: %v", err)
-		}
+
+		// Завершаем работу интерактивного режима
+		log.Println("Exiting interactive mode. The service will continue running in the background.")
 		return
 	}
 
-	if err = s.Run(); err != nil {
-		log.Fatalf("Service failed to start: %v", err)
+	// Запускаем как службу
+	logger, err := s.Logger(nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = s.Run()
+	if err != nil {
+		logger.Error(err)
 	}
 }
