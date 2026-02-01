@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/kardianos/service"
@@ -115,14 +116,72 @@ func loadOrCreateMachineUID() string {
 =====================================
 */
 func getLocalIP() string {
-	addrs, _ := net.InterfaceAddrs()
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok &&
-			!ipnet.IP.IsLoopback() &&
-			ipnet.IP.To4() != nil {
-			return ipnet.IP.String()
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		log.Printf("Error getting interfaces: %v", err)
+		return ""
+	}
+
+	for _, iface := range interfaces {
+		// Пропускаем выключенные интерфейсы
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		// Пропускаем loopback
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+				ip := ipnet.IP.String()
+
+				// Пропускаем APIPA адреса (169.254.0.0/16)
+				if ipnet.IP.IsLinkLocalUnicast() {
+					log.Printf("Interface %s has APIPA address: %s", iface.Name, ip)
+					continue
+				}
+
+				// Предпочитаем private адреса
+				if ipnet.IP.IsPrivate() {
+					log.Printf("Found valid IP on %s: %s", iface.Name, ip)
+					return ip
+				}
+			}
 		}
 	}
+
+	// Если не нашли нормальных адресов, ищем любой не-APIPA
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, addr := range addrs {
+			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+				ip := ipnet.IP.String()
+
+				// Берем любой IPv4, кроме loopback
+				if !ipnet.IP.IsLoopback() && !ipnet.IP.IsLinkLocalUnicast() {
+					log.Printf("Using fallback IP on %s: %s", iface.Name, ip)
+					return ip
+				}
+			}
+		}
+	}
+
+	log.Println("No suitable IP address found")
 	return ""
 }
 
@@ -251,6 +310,15 @@ func mainLogic() {
 		log.Fatalln("ServerURL is empty (ldflags broken)")
 	}
 
+	if CompanyIDStr == "" {
+		log.Fatalln("CompanyID is empty (ldflags broken)")
+	}
+	// Преобразуем CompanyIDStr в int
+	companyIDInt, err := strconv.Atoi(CompanyIDStr)
+	if err != nil {
+		log.Fatalf("Invalid CompanyID format: %s. Must be a number.", CompanyIDStr)
+	}
+
 	hostname, _ := os.Hostname()
 	machineUID := loadOrCreateMachineUID()
 
@@ -265,6 +333,7 @@ func mainLogic() {
 		registerPayload := map[string]interface{}{
 			"name_pc":     hostname,
 			"machine_uid": machineUID,
+			"company_id":  companyIDInt,
 		}
 
 		body, status, err := postJSON(

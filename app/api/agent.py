@@ -1,12 +1,12 @@
 # app/api/agent.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 import secrets
 from datetime import datetime
 from app.core.auth_agent import get_agent_by_token
 from app.database import get_db
-from app.models import Agent, AgentAdditionalData
+from app.models import Agent, AgentAdditionalData, Company
 from app.schemas.agent import (
     AgentRegisterIn,
     AgentRegisterOut,
@@ -23,7 +23,22 @@ async def register_agent(
     data: AgentRegisterIn,
     session: AsyncSession = Depends(get_db),
 ):
-    COMPANY_ID = 1
+    """
+    Регистрация нового агента или обновление существующего.
+    Принимает company_id от агента.
+    """
+    company_id = data.company_id
+
+    # Проверяем, существует ли компания с таким ID
+    result = await session.execute(select(Company).where(Company.id == company_id))
+    company = result.scalars().first()
+
+    if not company:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Company with ID {company_id} not found. "
+            f"Make sure the company exists in the database.",
+        )
 
     # 🔍 Ищем агента по machine_uid
     result = await session.execute(
@@ -42,7 +57,7 @@ async def register_agent(
         agent = Agent(
             machine_uid=data.machine_uid,
             name_pc=data.name_pc,
-            company_id=COMPANY_ID,
+            company_id=company_id,
             department_id=None,
             token=token,
             is_active=True,
