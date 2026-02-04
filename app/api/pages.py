@@ -182,3 +182,73 @@ async def agents_status(
         "ts": now.isoformat(),
         "agents": agents,
     }
+
+
+# модальное окно
+@router.get("/ui/modal-panel")
+async def modal_panel(
+    request: Request, agent_id: int, session: AsyncSession = Depends(get_db)
+):
+    """Возвращает HTML для модального окна агента"""
+
+    stmt = (
+        select(
+            Agent.id,
+            Agent.name_pc,
+            Agent.last_seen,
+            Agent.exe_version,
+            AgentAdditionalData.user_name,
+            AgentAdditionalData.ip_addr,
+            AgentAdditionalData.system,
+            AgentAdditionalData.total_memory,
+            AgentAdditionalData.available_memory,
+            Company.name.label("company_name"),
+            Department.name.label("department_name"),
+        )
+        .outerjoin(AgentAdditionalData, AgentAdditionalData.agent_id == Agent.id)
+        .outerjoin(Company, Agent.company_id == Company.id)
+        .outerjoin(Department, Agent.department_id == Department.id)
+        .where(Agent.id == agent_id)
+    )
+
+    result = await session.execute(stmt)
+    row = result.first()
+
+    if not row:
+        return templates.TemplateResponse("partials/empty.html", {"request": request})
+
+    # Проверяем онлайн статус
+    now = datetime.utcnow()
+    is_online = row.last_seen and (now - row.last_seen) < OFFLINE_AFTER
+
+    # Форматируем память
+    memory_info = None
+    if row.total_memory and row.available_memory:
+        used_memory = row.total_memory - row.available_memory
+        memory_percent = (used_memory / row.total_memory) * 100
+        memory_info = {
+            "total_gb": round(row.total_memory / (1024**3), 2),
+            "used_gb": round(used_memory / (1024**3), 2),
+            "percent": round(memory_percent, 1),
+        }
+
+    agent_data = {
+        "id": row.id,
+        "name_pc": row.name_pc,
+        "user_name": row.user_name or "Неизвестно",
+        "ip_addr": row.ip_addr or "Неизвестно",
+        "system": row.system or "Неизвестно",
+        "company_name": row.company_name or "Неизвестно",
+        "department_name": row.department_name or "Без отдела",
+        "exe_version": row.exe_version or "Неизвестно",
+        "is_online": is_online,
+        "last_seen": (
+            row.last_seen.strftime("%d.%m.%Y %H:%M") if row.last_seen else "Никогда"
+        ),
+        "memory": memory_info,
+    }
+
+    return templates.TemplateResponse(
+        "partials/agent_modal.html",  # создадите этот шаблон
+        {"request": request, "agent": agent_data},
+    )

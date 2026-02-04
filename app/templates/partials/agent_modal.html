@@ -1,0 +1,105 @@
+<!-- app/templates/partials/agent_modal.html -->
+<div class="modal-content">
+  <div class="modal-header">
+    <h2>Агент: {{ agent.name_pc }}</h2>
+    <span class="modal-close" onclick="closeAgentModal()">&times;</span>
+  </div>
+
+  <div class="modal-body">
+    <div class="agent-info-grid">
+      <div class="info-item">
+        <span class="info-label">ID:</span>
+        <span class="info-value">{{ agent.id }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Имя ПК:</span>
+        <span class="info-value">{{ agent.name_pc }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Пользователь:</span>
+        <span class="info-value">{{ agent.user_name }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">IP адрес:</span>
+        <span class="info-value">{{ agent.ip_addr }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">ОС:</span>
+        <span class="info-value">{{ agent.system }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Компания:</span>
+        <span class="info-value">{{ agent.company_name }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Отдел:</span>
+        <span class="info-value">{{ agent.department_name }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Статус:</span>
+        <span
+          class="info-value {% if agent.is_online %}status-online{% else %}status-offline{% endif %}"
+        >
+          {% if agent.is_online %}🟢 Онлайн{% else %}🔴 Оффлайн{% endif %}
+        </span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Последняя активность:</span>
+        <span class="info-value">{{ agent.last_seen }}</span>
+      </div>
+      {% if agent.memory %}
+      <div class="info-item">
+        <span class="info-label">Использование памяти:</span>
+        <span class="info-value">
+          {{ agent.memory.used_gb }} GB / {{ agent.memory.total_gb }} GB ({{
+          agent.memory.percent }}%)
+        </span>
+        <div class="progress-bar">
+          <div
+            class="progress-bar-fill"
+            data-percent="{{ agent.memory.percent }}"
+          >
+            {{ agent.memory.percent }}%
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="modal-actions">
+      <button
+        class="btn btn-primary"
+        hx-post="/api/agent/{{ agent.id }}/action?action=ping"
+        hx-target="#notification"
+        hx-swap="innerHTML"
+        onclick="closeAgentModal()"
+      >
+        🏓 Пинговать
+      </button>
+
+      <button
+        class="btn btn-secondary"
+        hx-post="/api/agent/{{ agent.id }}/action?action=remote"
+        hx-target="#notification"
+        hx-swap="innerHTML"
+        onclick="closeAgentModal()"
+      >
+        💻 Удаленный доступ
+      </button>
+
+      <button
+        class="btn btn-secondary"
+        hx-post="/api/agent/{{ agent.id }}/action?action=files"
+        hx-target="#notification"
+        hx-swap="innerHTML"
+        onclick="closeAgentModal()"
+      >
+        📁 Файлы
+      </button>
+
+      <button class="btn btn-close" onclick="closeAgentModal()">
+        ✕ Закрыть
+      </button>
+    </div>
+  </div>
+</div>
