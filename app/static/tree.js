@@ -1,4 +1,3 @@
-// app/static/tree.js
 "use strict";
 
 const STORAGE_KEY = "tree-state";
@@ -9,7 +8,7 @@ function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-// Toggle одного узла
+// ====== Toggle одного узла ======
 window.toggleNode = function (id, arrowEl) {
   const ul = document.querySelector(`ul[data-id="${id}"]`);
   if (!ul) return;
@@ -30,7 +29,7 @@ window.toggleNode = function (id, arrowEl) {
   );
 };
 
-// Toggle всех узлов
+// ====== Toggle всех узлов ======
 window.toggleAll = function () {
   allExpanded = !allExpanded;
   const nodes = document.querySelectorAll(".collapsible");
@@ -59,7 +58,7 @@ window.toggleAll = function () {
   if (btn) btn.textContent = allExpanded ? "Свернуть всё" : "Развернуть всё";
 };
 
-// Restore состояния дерева
+// ====== Restore состояния дерева ======
 function restoreTreeState() {
   const nodes = document.querySelectorAll(".collapsible");
   nodes.forEach((ul) => {
@@ -77,7 +76,7 @@ function restoreTreeState() {
   }
 }
 
-// Highlight активного узла и скролл
+// ====== Highlight активного узла и скролл ======
 function highlightSelectedNodeFromURL() {
   const params = new URLSearchParams(window.location.search);
   const targetType = params.get("target_type");
@@ -109,16 +108,26 @@ function highlightSelectedNodeFromURL() {
   }
 }
 
-// Инициализация дерева
+// ====== Инициализация дерева ======
 function initTree() {
   restoreTreeState();
   highlightSelectedNodeFromURL();
 }
 
-// Подключение после swap HTMX и DOMContentLoaded
-document.addEventListener("htmx:afterSwap", initTree);
-if (document.readyState === "complete") {
+// ====== Автообновление дерева через tree-reload ======
+document.addEventListener("tree-reload", async function () {
+  const leftPanel = document.getElementById("left-panel");
+  if (!leftPanel) return;
+
+  await htmx.ajax("GET", "/ui/left-menu", {
+    target: "#left-panel",
+    swap: "innerHTML",
+  });
+
+  // После вставки нового HTML
   initTree();
-} else {
-  window.addEventListener("DOMContentLoaded", initTree);
-}
+});
+
+// ====== Инициализация после загрузки и htmx swap ======
+document.addEventListener("htmx:afterSwap", initTree);
+window.addEventListener("DOMContentLoaded", initTree);

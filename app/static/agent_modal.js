@@ -1,16 +1,16 @@
-// app/static/agent_modal.js - КАК ДОЛЖНО БЫТЬ:
 "use strict";
 
-// Закрытие модалки
+// ====== Закрытие модалки ======
 window.closeAgentModal = function () {
   const modal = document.getElementById("agent-modal");
   if (modal) {
     modal.style.display = "none";
     modal.innerHTML = "";
+    document.body.style.overflow = "auto";
   }
 };
 
-// Сохранение отдела
+// ====== Изменение отдела ======
 async function changeDepartment(agentId) {
   const selected = document.querySelector('input[name="department"]:checked');
   if (!selected) {
@@ -34,24 +34,37 @@ async function changeDepartment(agentId) {
     const result = await response.json();
 
     if (result.status === "success") {
-      alert("✅ " + result.message);
+      // Закрываем модалку
       closeAgentModal();
+
+      // Обновляем top-panel
+      const targetId = document.getElementById("target-id")?.value;
+      const targetType = document.getElementById("target-type")?.value;
+      if (targetId && targetType) {
+        htmx.ajax(
+          "GET",
+          `/ui/top-panel?target_id=${targetId}&target_type=${targetType}`,
+          { target: "#top-right", swap: "innerHTML" },
+        );
+      }
+
+      // Обновляем дерево слева
+      htmx.trigger("#left-panel", "tree-reload");
     } else {
-      alert("❌ " + result.message);
+      alert(result.message);
       btn.textContent = oldText;
       btn.disabled = false;
     }
   } catch (error) {
-    alert("Сетевая ошибка");
-    console.error(error);
+    console.error("Ошибка:", error);
+    alert("Ошибка сохранения");
     btn.textContent = oldText;
     btn.disabled = false;
   }
 }
 
-// Инициализация
-document.addEventListener("DOMContentLoaded", function () {
-  // Только привязка кнопок и выбор дефолтного отдела
+// ====== Инициализация кнопок модалки ======
+function initAgentModal() {
   const saveBtn = document.getElementById("save-department-btn");
   if (saveBtn) {
     saveBtn.addEventListener("click", function () {
@@ -66,7 +79,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const closeBtn = document.getElementById("modal-close-btn");
   if (closeBtn) closeBtn.addEventListener("click", closeAgentModal);
 
-  // Выбор текущего отдела
+  // Выбираем текущий отдел по дефолту
   const currentId = document
     .querySelector(".departments-list")
     ?.getAttribute("data-current-dept-id");
@@ -76,4 +89,11 @@ document.addEventListener("DOMContentLoaded", function () {
     );
     if (radio) radio.checked = true;
   }
-});
+}
+
+// Делаем функцию глобальной для вызова из agents_table.js
+window.initAgentModal = initAgentModal;
+
+// ====== Автоинициализация при swap или DOMContentLoaded ======
+document.addEventListener("htmx:afterSwap", initAgentModal);
+window.addEventListener("DOMContentLoaded", initAgentModal);
