@@ -2,6 +2,7 @@
 from typing import Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request, Query, Depends
+from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -136,7 +137,6 @@ async def bottom_panel(
         )
         result = await session.execute(stmt)
         agent = result.scalars().first()
-    logger.debug(agent)
     return templates.TemplateResponse(
         "partials/bottom_panel.html",
         {"request": request, "agent": agent},
@@ -185,23 +185,21 @@ async def agents_status(
 
 
 # модальное окно
+# app/api/pages.py - добавляем новые функции
 @router.get("/ui/modal-panel")
 async def modal_panel(
     request: Request, agent_id: int, session: AsyncSession = Depends(get_db)
 ):
-    """Возвращает HTML для модального окна агента"""
+    """Возвращает HTML для модального окна изменения отдела агента"""
 
-    stmt = (
+    # Получаем данные агента
+    stmt_agent = (
         select(
             Agent.id,
             Agent.name_pc,
-            Agent.last_seen,
-            Agent.exe_version,
+            Agent.company_id,
+            Agent.department_id,
             AgentAdditionalData.user_name,
-            AgentAdditionalData.ip_addr,
-            AgentAdditionalData.system,
-            AgentAdditionalData.total_memory,
-            AgentAdditionalData.available_memory,
             Company.name.label("company_name"),
             Department.name.label("department_name"),
         )
@@ -211,44 +209,101 @@ async def modal_panel(
         .where(Agent.id == agent_id)
     )
 
-    result = await session.execute(stmt)
+    result = await session.execute(stmt_agent)
     row = result.first()
 
     if not row:
         return templates.TemplateResponse("partials/empty.html", {"request": request})
 
-    # Проверяем онлайн статус
-    now = datetime.utcnow()
-    is_online = row.last_seen and (now - row.last_seen) < OFFLINE_AFTER
+    # Получаем все отделы этой компании
+    stmt_departments = (
+        select(Department.id, Department.name)
+        .where(Department.company_id == row.company_id)
+        .order_by(Department.name)
+    )
 
-    # Форматируем память
-    memory_info = None
-    if row.total_memory and row.available_memory:
-        used_memory = row.total_memory - row.available_memory
-        memory_percent = (used_memory / row.total_memory) * 100
-        memory_info = {
-            "total_gb": round(row.total_memory / (1024**3), 2),
-            "used_gb": round(used_memory / (1024**3), 2),
-            "percent": round(memory_percent, 1),
-        }
+    dept_result = await session.execute(stmt_departments)
+    departments = dept_result.all()
 
     agent_data = {
         "id": row.id,
         "name_pc": row.name_pc,
         "user_name": row.user_name or "Неизвестно",
-        "ip_addr": row.ip_addr or "Неизвестно",
-        "system": row.system or "Неизвестно",
         "company_name": row.company_name or "Неизвестно",
-        "department_name": row.department_name or "Без отдела",
-        "exe_version": row.exe_version or "Неизвестно",
-        "is_online": is_online,
-        "last_seen": (
-            row.last_seen.strftime("%d.%m.%Y %H:%M") if row.last_seen else "Никогда"
-        ),
-        "memory": memory_info,
+        "current_department_id": row.department_id,  # Может быть None
+        "current_department_name": row.department_name or "Без отдела",
+        "company_id": row.company_id,
     }
 
     return templates.TemplateResponse(
-        "partials/agent_modal.html",  # создадите этот шаблон
-        {"request": request, "agent": agent_data},
+        "partials/agent_modal.html",
+        {"request": request, "agent": agent_data, "departments": departments},
     )
+
+
+# app/api/pages.py - обновленная функция change_agent_department
+@router.post("/api/agent/{agent_id}/change-department")
+async def change_agent_department(
+    agent_id: int, request: Request, session: AsyncSession = Depends(get_db)
+):
+    """Изменение отдела агента с возвратом данных для обновления UI"""
+    try:
+        data = await request.json()
+        department_id = data.get("department_id")
+
+        # Получаем агента
+        agent = await session.get(Agent, agent_id)
+        if not agent:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "status": "error",
+                    "message": f"Агент с ID {agent_id} не найден",
+                },
+            )
+
+        # Запоминаем старый отдел для логики
+        old_department_id = agent.department_id
+
+        # Если department_id = 0 или None, убираем отдел
+        if not department_id or department_id == 0:
+            agent.department_id = None
+            new_department_name = "Без отдела"
+            message = f"Агент {agent.name_pc} перемещен в 'Без отдела'"
+        else:
+            # Проверяем существование отдела
+            department = await session.get(Department, department_id)
+            if not department:
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "status": "error",
+                        "message": f"Отдел с ID {department_id} не найден",
+                    },
+                )
+
+            agent.department_id = department_id
+            new_department_name = department.name
+            message = f"Агент {agent.name_pc} перемещен в отдел '{department.name}'"
+
+        await session.commit()
+
+        # Получаем обновленные данные для ответа
+        from app.repositories.tree import get_tree
+
+        return {
+            "status": "success",
+            "message": message,
+            "agent_id": agent_id,
+            "new_department_id": agent.department_id,
+        }
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Ошибка изменения отдела агента {agent_id}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Ошибка при изменении отдела: {str(e)}",
+            },
+        )
