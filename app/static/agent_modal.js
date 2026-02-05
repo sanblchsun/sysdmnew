@@ -1,3 +1,4 @@
+// app/static/agent_modal.js
 "use strict";
 
 // ====== Закрытие модалки ======
@@ -48,8 +49,8 @@ async function changeDepartment(agentId) {
         );
       }
 
-      // Обновляем дерево слева
-      htmx.trigger("#left-panel", "tree-reload");
+      // Обновляем дерево слева и таблицу справа
+      htmx.trigger(document.body, "data-reload");
     } else {
       alert(result.message);
       btn.textContent = oldText;

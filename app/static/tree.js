@@ -115,7 +115,7 @@ function initTree() {
 }
 
 // ====== Автообновление дерева через tree-reload ======
-document.addEventListener("tree-reload", async function () {
+document.addEventListener("data-reload", async function () {
   const leftPanel = document.getElementById("left-panel");
   if (!leftPanel) return;
 

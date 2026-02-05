@@ -8,7 +8,7 @@
   <div
     id="left-panel"
     hx-get="/ui/left-menu"
-    hx-trigger="load, tree-reload from:body"
+    hx-trigger="load, data-reload from:body"
     hx-target="this"
   ></div>
 
@@ -18,7 +18,7 @@
     <div
       id="top-right"
       hx-get="/ui/top-panel{% if request.url.query %}?{{ request.url.query }}{% endif %}"
-      hx-trigger="load"
+      hx-trigger="load, data-reload from:body"
       hx-target="this"
     ></div>
 

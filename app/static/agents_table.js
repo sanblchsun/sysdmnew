@@ -1,3 +1,4 @@
+// app/static/agents_table.js
 "use strict";
 
 // ======== ПЕРЕМЕННЫЕ ========
