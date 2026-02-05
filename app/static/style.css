@@ -200,60 +200,82 @@ body {
 /* Красивая таблица справа сверху ========================================== */
 .agents-table {
   width: 100%;
-  border-collapse: collapse;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  font-family: Arial, sans-serif;
-  margin-bottom: 20px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #eee;
+  background-color: #1e1e1e;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
+
+.agents-table thead {
+  background: linear-gradient(90deg, #2c3e50, #34495e);
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 1.2em;
+}
+
 
 .agents-table th {
   background-color: #f2f2f2;
   color: #333;
-  padding: 10px 15px;
   text-align: left;
+  padding:8px 15px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
   font-weight: bold;
   border-bottom: 1px solid #ddd;
+  transition: background 0.3s, transform 0.15s;
 }
+
 
 .agents-table td {
-  padding: 10px 15px;
+  padding: 8px 15px;
   border-bottom: 1px solid #ddd;
-}
-
-.agents-table tbody tr:nth-child(even) {
-  background-color: #241a1a;
-}
-
-/* Hover только для неактивных строк */
-.agents-table tbody tr:hover:not(.is-active) {
-  background-color: #583f3f;
-  color: #fff;
-}
-
-.agents-table thead {
-  background-color: #3498db;
-  color: white;
+  transition: background 0.3s, transform 0.15s;
 }
 
 .agents-table thead th {
   padding: 12px 15px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+}
+
+.agents-table tbody tr {
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border-radius: 6px;
+  display: table-row;
+}
+
+.agents-table tbody tr:nth-child(even) {
+  background-color: #252525;
+}
+
+/* Hover только для неактивных строк */
+.agents-table tbody tr:hover:not(.is-active) {
+  color: #fff;
+  background: linear-gradient(90deg, #3b3b3b, #4b4b4b);
+  transform: scale(1.01);
+  box-shadow: inset 0 0 10px rgba(255,255,255,0.05);
+}
+
+/* Активная строка таблицы */
+.agents-table tr.is-active {
+  background-color: #03174e !important;
+  color: #fff;
 }
 
 .h3_position {
   text-align: center;
 }
 
-/* Адаптация под мобильные устройства */
-@media screen and (max-width: 600px) {
-  .agents-table {
-    font-size: 14px;
-  }
-
+/* Мобильная адаптация */
+@media screen and (max-width: 768px) {
   .agents-table th,
   .agents-table td {
-    padding: 8px 12px;
+    padding: 10px 12px;
+    font-size: 0.85em;
   }
 }
 
@@ -389,19 +411,6 @@ body {
   }
 }
 
-/* Активный элемент дерева */
-.label.is-active {
-  background-color: #2f55c0;
-  color: #fff;
-  border-radius: 4px;
-  padding: 2px 6px;
-}
-
-/* Активная строка таблицы */
-.agents-table tr.is-active {
-  background-color: #03174e !important;
-  color: #fff;
-}
 
 /* Модальное окно */
 .modal {
