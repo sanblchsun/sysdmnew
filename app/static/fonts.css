@@ -1,0 +1,142 @@
+@font-face {
+  font-family: "FontIcons";
+  src: url("/static/fonts/662fefa8.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+}
+
+.icon-class {
+  font-family: "FontIcons";
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 30px;
+}
+
+.icon-apple::before {
+  color: #0d62c4;
+  content: "\0F0035";
+}
+
+.icon-linux::before {
+  color: #0d62c4;
+  content: "\0F033D";
+}
+
+.icon-windows::before {
+  color: #0d62c4;
+  content: "\0F05B3";
+}
+
+.icon_user::before {
+  color: #0d62c4;
+  content: "\0F0004";
+}
+
+.icon_user_network::before {
+  color: #0d62c4;
+  content: "\0F0317";
+}
+
+.icon_earth_network::before {
+  color: #0d62c4;
+  content: "\0F01E7";
+}
+
+.icon_name_pc::before {
+  color: #0d62c4;
+  content: "\0F07C0";
+}
+
+.icon_os::before {
+  color: #0d62c4;
+  content: "\0F0372";
+}
+
+.icon_disk::before {
+  color: #0d62c4;
+  content: "\0F0878";
+}
+
+.icon_memory::before {
+  color: #0d62c4;
+  content: "\0F1345";
+}
+
+.icon-summary::before {
+  content: "\0F0028";
+}
+
+.icon-checks::before {
+  content: "\0F012D";
+}
+
+.icon-tasks::before {
+  content: "\0F020D";
+}
+
+.icon-softs::before {
+  content: "\0F0372";
+}
+
+.icon-history::before {
+  content: "\0F006B";
+}
+
+.icon-notes::before {
+  content: "\0F00AE";
+}
+
+.icon-assets::before {
+  content: "\0F00D7";
+}
+
+.icon-debug::before {
+  content: "\0F00E4";
+}
+
+.icon-patches::before {
+  content: "\0F0120";
+}
+
+.icon-audit::before {
+  content: "\0F05C1";
+}
+
+.online-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.online-dot.online::before {
+  color: #53e60f;
+  content: "\0F00DA";
+}
+.online-dot.offline::before {
+  color: #e71710;
+  content: "\0F00DA";
+}
+
+/* Адаптивные размеры иконок */
+@media (max-width: 768px) {
+  .icon-class {
+    font-size: 22px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .icon-class {
+    font-size: 25px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .icon-class {
+    font-size: 30px;
+  }
+}

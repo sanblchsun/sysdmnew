@@ -1,74 +1,156 @@
 <!-- app/templates/partials/bottom_panel.html -->
-<div class="panel-content">
-  {% if agent %}
-  <h3 class="h3_position">Подробности агента</h3>
+<div class="bottom-panel">
+  <!-- TOOLBAR -->
+  <div class="bottom-tabs" role="tablist">
+    <button class="tab active" data-tab="summary">
+      <i class="fas fa-info-circle"></i>
+      <span class="icon-class icon-summary"></span>
+      <span>Summary</span>
+    </button>
 
-  <nobr class="icon-class icon_name_pc"></nobr>
-  <nobr><strong> Имя ПК:</strong> {{ agent.name_pc }}</nobr>
-  <br />
+    <button class="tab" data-tab="checks">
+      <i class="fas fa-check-double"></i>
+      <span class="icon-class icon-checks"></span>
+      <span>Checks</span>
+    </button>
 
-  <nobr class="icon-class icon_user"></nobr>
-  <nobr
-    ><strong> Пользователь:</strong>
-    {{ agent.additional_data.user_name if agent.additional_data else "-" }}
-  </nobr>
-  <br />
+    <button class="tab" data-tab="tasks">
+      <i class="fas fa-tasks"></i>
+      <span class="icon-class icon-tasks"></span>
+      <span>Tasks</span>
+    </button>
 
-  <nobr class="icon-class icon_os"></nobr>
-  <nobr
-    ><strong> Операционная система:</strong>
-    {{ agent.additional_data.system if agent.additional_data else "-" }}
-  </nobr>
-  <br />
+    <button class="tab" data-tab="patches">
+      <i class="material-icons"></i>
+      <span class="icon-class icon-patches"></span>
+      <span>Patches</span>
+    </button>
 
-  <nobr class="icon-class icon_user_network"></nobr>
-  <nobr
-    ><strong> IP-адрес:</strong>
-    {{ agent.additional_data.ip_addr if agent.additional_data else "-" }}
-  </nobr>
+    <button class="tab" data-tab="software">
+      <i class="fab fa-windows"></i>
+      <span class="icon-class icon-softs"></span>
+      <span>Software</span>
+    </button>
 
-  <hr />
+    <button class="tab" data-tab="history">
+      <i class="material-icons"></i>
+      <span class="icon-class icon-history"></span>
+      <span>History</span>
+    </button>
 
-  <nobr class="icon-class icon_disk"></nobr>
-  <nobr><strong> Диски:</strong></nobr>
-  <br />
-  <ul>
-    {% if agent.additional_data and agent.additional_data.disks %} {% for disk
-    in agent.additional_data.disks %}
-    <li>
-      {{ disk.name }}: {{ disk.size or "-" }} ГБ ({{ disk.free or "-" }} ГБ
-      свободно)
-    </li>
-    {% endfor %} {% else %}
-    <li>C: - ГБ (- ГБ свободно)</li>
-    {% endif %}
-  </ul>
+    <button class="tab" data-tab="notes">
+      <i class="far fa-sticky-note"></i>
+      <span class="icon-class icon-notes"></span>
+      <span>Notes</span>
+    </button>
 
-  <nobr class="icon-class icon_memory"></nobr>
-  <nobr><strong> Память:</strong></nobr>
-  <p>
-    Общая память: {{ agent.additional_data.total_memory if agent.additional_data
-    else "-" }} ГБ
-  </p>
-  <p>
-    Свободно: {{ agent.additional_data.available_memory if agent.additional_data
-    else "-" }} ГБ
-  </p>
+    <button class="tab" data-tab="assets">
+      <i class="fas fa-barcode"></i>
+      <span class="icon-class icon-assets"></span>
+      <span>Assets</span>
+    </button>
 
-  <nobr class="icon-class icon_earth_network"></nobr>
-  <nobr> Внешний IP-адрес:</nobr>
-  <nobr>
-    {{ agent.additional_data.external_ip if agent.additional_data else "-" }}
-  </nobr>
+    <button class="tab" data-tab="debug">
+      <i class="material-icons"></i>
+      <span class="icon-class icon-debug"></span>
+      <span>Debug</span>
+    </button>
 
-  {% else %}
-  <h3>Bottom panel</h3>
-  <p>Логи / консоль / статус</p>
-  <pre style="margin-top: 1rem">
-[INFO] Service started
-[OK] HTMX connected
-[READY] Waiting for events
-    </pre
-  >
-  {% endif %}
+    <button class="tab" data-tab="audit">
+      <i class="material-icons"></i>
+      <span class="icon-class icon-audit"></span>
+      <span>Audit</span>
+    </button>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="bottom-tab-content">
+    <div class="tab-pane active" id="tab-summary">
+      <div class="panel-content">
+        {% if agent %}
+        <h3 class="h3_position">Подробности агента</h3>
+
+        <nobr class="icon-class icon_name_pc"></nobr>
+        <nobr><strong> Имя ПК:</strong> {{ agent.name_pc }}</nobr>
+        <br />
+
+        <nobr class="icon-class icon_user"></nobr>
+        <nobr
+          ><strong> Пользователь:</strong>
+          {{ agent.additional_data.user_name if agent.additional_data else "-"
+          }}
+        </nobr>
+        <br />
+
+        <nobr class="icon-class icon_os"></nobr>
+        <nobr
+          ><strong> Операционная система:</strong>
+          {{ agent.additional_data.system if agent.additional_data else "-" }}
+        </nobr>
+        <br />
+
+        <nobr class="icon-class icon_user_network"></nobr>
+        <nobr
+          ><strong> IP-адрес:</strong>
+          {{ agent.additional_data.ip_addr if agent.additional_data else "-" }}
+        </nobr>
+
+        <hr />
+
+        <nobr class="icon-class icon_disk"></nobr>
+        <nobr><strong> Диски:</strong></nobr>
+        <br />
+        <ul>
+          {% if agent.additional_data and agent.additional_data.disks %} {% for
+          disk in agent.additional_data.disks %}
+          <li>
+            {{ disk.name }}: {{ disk.size or "-" }} ГБ ({{ disk.free or "-" }}
+            ГБ свободно)
+          </li>
+          {% endfor %} {% else %}
+          <li>C: - ГБ (- ГБ свободно)</li>
+          {% endif %}
+        </ul>
+
+        <nobr class="icon-class icon_memory"></nobr>
+        <nobr><strong> Память:</strong></nobr>
+        <p>
+          Общая память: {{ agent.additional_data.total_memory if
+          agent.additional_data else "-" }} ГБ
+        </p>
+        <p>
+          Свободно: {{ agent.additional_data.available_memory if
+          agent.additional_data else "-" }} ГБ
+        </p>
+
+        <nobr class="icon-class icon_earth_network"></nobr>
+        <nobr> Внешний IP-адрес:</nobr>
+        <nobr>
+          {{ agent.additional_data.external_ip if agent.additional_data else "-"
+          }}
+        </nobr>
+
+        {% else %}
+        <h3>Bottom panel</h3>
+        <p>Логи / консоль / статус</p>
+        <pre style="margin-top: 1rem">
+      [INFO] Service started
+      [OK] HTMX connected
+      [READY] Waiting for events
+          </pre
+        >
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="tab-pane" id="tab-checks">Checks content</div>
+    <div class="tab-pane" id="tab-tasks">Tasks content</div>
+    <div class="tab-pane" id="tab-patches">Patches content</div>
+    <div class="tab-pane" id="tab-software">Software content</div>
+    <div class="tab-pane" id="tab-history">History content</div>
+    <div class="tab-pane" id="tab-notes">Notes content</div>
+    <div class="tab-pane" id="tab-assets">Assets content</div>
+    <div class="tab-pane" id="tab-debug">Debug content</div>
+    <div class="tab-pane" id="tab-audit">Audit content</div>
+  </div>
 </div>

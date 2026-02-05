@@ -217,24 +217,26 @@ body {
   font-size: 1.2em;
 }
 
-
 .agents-table th {
   background-color: #69747e;
   color: #030202;
   text-align: left;
-  padding:8px 15px;
+  padding: 8px 15px;
   text-transform: uppercase;
   letter-spacing: 1px;
   font-weight: bold;
   border-bottom: 1px solid #ddd;
-  transition: background 0.3s, transform 0.15s;
+  transition:
+    background 0.3s,
+    transform 0.15s;
 }
-
 
 .agents-table td {
   padding: 8px 15px;
   border-bottom: 1px solid #ddd;
-  transition: background 0.3s, transform 0.15s;
+  transition:
+    background 0.3s,
+    transform 0.15s;
 }
 
 .agents-table thead th {
@@ -257,17 +259,13 @@ body {
   color: #fff;
   background: linear-gradient(90deg, #3b3b3b, #4b4b4b);
   transform: scale(1.01);
-  box-shadow: inset 0 0 10px rgba(255,255,255,0.05);
+  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.05);
 }
 
 /* Активная строка таблицы */
 .agents-table tr.is-active {
   background-color: #03174e !important;
   color: #fff;
-}
-
-.h3_position {
-  text-align: center;
 }
 
 /* Мобильная адаптация */
@@ -305,110 +303,6 @@ body {
   border-top-color: black;
   border-radius: 50%;
   animation: spinner 1s linear infinite;
-}
-
-/* front woff2 */
-@font-face {
-  font-family: "FontIcons";
-  src: url("/static/fonts/662fefa8.woff2") format("woff2");
-  font-weight: normal;
-  font-style: normal;
-}
-
-.icon-class {
-  font-family: "FontIcons";
-  font-style: normal;
-  font-weight: normal;
-  font-variant: normal;
-  text-transform: none;
-  line-height: 1;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  font-size: 30px;
-}
-
-.icon-apple::before {
-  color: #0d62c4;
-  content: "\0F0035";
-}
-
-.icon-linux::before {
-  color: #0d62c4;
-  content: "\0F033D";
-}
-
-.icon-windows::before {
-  color: #0d62c4;
-  content: "\0F05B3";
-}
-
-.icon_user::before {
-  color: #0d62c4;
-  content: "\0F0004";
-}
-
-.icon_user_network::before {
-  color: #0d62c4;
-  content: "\0F0317";
-}
-
-.icon_earth_network::before {
-  color: #0d62c4;
-  content: "\0F01E7";
-}
-
-.icon_name_pc::before {
-  color: #0d62c4;
-  content: "\0F07C0";
-}
-
-.icon_os::before {
-  color: #0d62c4;
-  content: "\0F0372";
-}
-
-.icon_disk::before {
-  color: #0d62c4;
-  content: "\0F0878";
-}
-
-.icon_memory::before {
-  color: #0d62c4;
-  content: "\0F1345";
-}
-
-.online-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-.online-dot.online::before {
-  color: #53e60f;
-  content: "\0F00DA";
-}
-.online-dot.offline::before {
-  color: #e71710;
-  content: "\0F00DA";
-}
-
-/* Адаптивные размеры иконок */
-@media (max-width: 768px) {
-  .icon-class {
-    font-size: 22px;
-  }
-}
-
-@media (min-width: 769px) and (max-width: 1024px) {
-  .icon-class {
-    font-size: 25px;
-  }
-}
-
-@media (min-width: 1025px) {
-  .icon-class {
-    font-size: 30px;
-  }
 }
 
 
@@ -530,7 +424,7 @@ body {
 .btn-primary:hover {
   background-color: #2980b9;
   transform: scale(1.03);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .btn-secondary {
@@ -541,14 +435,13 @@ body {
 .btn-secondary:hover {
   background-color: #636e72;
   transform: scale(1.03);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .btn-close {
   background-color: #f1f1f1;
   color: #333;
 }
-
 
 /* Подсветка строки таблицы */
 .row-active {
