@@ -98,10 +98,6 @@
   border: none;
   color: #ccc;
   cursor: pointer;
-  font-size: 13px;
-}
-
-.summary-btn i {
   font-size: 18px;
 }
 
@@ -109,14 +105,6 @@
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
   border-radius: 4px;
-}
-
-.summary-btn.icon-only {
-  padding: 4px;
-}
-
-.summary-btn.dropdown .arrow {
-  font-size: 20px;
 }
 
 .summary-spacer {
@@ -174,7 +162,7 @@
   align-items: center;
   gap: 12px;
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: 18px;
   color: #ddd;
   cursor: pointer;
   white-space: nowrap;
