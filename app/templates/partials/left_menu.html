@@ -41,7 +41,7 @@
       >
         {% if node.type == "company" %} 🏛 {{ node.name }} {% elif node.type ==
         "unassigned" %} 📦 {{ node.name }} {% elif node.type == "department" %}
-        📎 {{ node.name }} {% else %} {{ node.name }} {% endif %}
+        {{ node.name }} {% else %} {{ node.name }} {% endif %}
       </a>
     </div>
   </div>
@@ -53,7 +53,11 @@
   <!-- ================= AGENT LEAF ================= -->
   <div class="node agent-leaf">
     <span class="agent-indent"></span>
+    {% if node.type == "department" %}
+    <span class="label agent-label"> 🗍{{ node.name }} </span> 
+    {% else %}
     <span class="label agent-label"> 👤 {{ node.name }} </span>
+    {% endif %}
   </div>
   {% endif %}
 </li>
