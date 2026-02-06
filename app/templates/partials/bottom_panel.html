@@ -62,6 +62,81 @@
       <span>Audit</span>
     </button>
   </div>
+  <!-- SUMMARY TOOLBAR -->
+  <div class="summary-toolbar" role="toolbar">
+    <!-- Left actions -->
+    <button class="summary-btn icon-only" title="Refresh">
+      <i class="material-icons"></i>
+      <span class="icon-class icon-refresh"></span>
+    </button>
+
+    <i class="status-icon online fas fa-signal"></i>
+
+    <strong class="agent-title"> {{ agent.name_pc if agent else "—" }} </strong>
+
+    <span class="agent-meta">
+      • {{ agent.additional_data.system if agent and agent.additional_data else
+      "OS" }} • Agent v{{ agent.agent_version if agent else "-" }}
+    </span>
+
+    <div class="summary-spacer"></div>
+
+    <!-- Right actions -->
+    <button class="summary-btn">
+      <i class="material-icons"></i>
+      <span class="icon-class icon-popout"></span>
+      <span>Popout</span>
+    </button>
+
+    <button class="summary-btn">
+      <i class="material-icons"></i>
+      <span class="icon-class icon-control"></span>
+      <span>Take Control</span>
+    </button>
+
+    <button
+      class="summary-btn dropdown"
+      id="actions-btn"
+      aria-haspopup="true"
+      aria-expanded="false"
+    >
+      <i class="material-icons arrow"></i>
+      <span class="icon-class icon-menu"></span>
+      <span>Actions</span>
+    </button>
+
+    <div class="actions-menu" id="actions-menu" role="list">
+      <div class="action-item">
+        <i class="fas fa-edit"></i>
+        <span class="icon-class icon-reboot"></span>
+        <span>Reboot {{ agent.name_pc }}</span>
+      </div>
+
+      <div class="action-item">
+        <i class="fas fa-edit"></i>
+        <span class="icon-class icon-shutdown"></span>
+        <span>Shutdown {{ agent.name_pc }}</span>
+      </div>
+
+      <div class="action-item">
+        <i class="fas fa-terminal"></i>
+        <span class="icon-class icon-terminal"></span>
+        <span>Terminal</span>
+      </div>
+
+      <div class="action-item">
+        <i class="fas fa-terminal"></i>
+        <span class="icon-class icon-script"></span>
+        <span>Run Script</span>
+      </div>
+
+      <hr class="action-separator" />
+
+      <div class="action-item">
+        <span>Close</span>
+      </div>
+    </div>
+  </div>
 
   <!-- CONTENT -->
   <div class="bottom-tab-content">

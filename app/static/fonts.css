@@ -107,6 +107,38 @@
   content: "\0F05C1";
 }
 
+.icon-refresh::before {
+  content: "\0F006A";
+}
+
+.icon-popout::before {
+  content: "\0F0207";
+}
+
+.icon-control::before {
+  content: "\0F0322";
+}
+
+.icon-menu::before {
+  content: "\0F0645";
+}
+
+.icon-terminal::before {
+  content: "\0F018D";
+}
+
+.icon-shutdown::before {
+  content: "\0F1107";
+}
+
+.icon-script::before {
+  content: "\0F096E";
+}
+
+.icon-reboot::before {
+  content: "\0F10CF";
+}
+
 .online-dot {
   display: inline-block;
   width: 10px;
