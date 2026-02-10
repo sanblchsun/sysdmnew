@@ -31,22 +31,18 @@ def slugify(name: str) -> str:
 
 # ===================== BUILD =====================
 def build_exe(company_slug: str, config: dict) -> None:
-    """
-    Собирает Windows exe для конкретной компании
-    с вшивкой CompanyIDStr, ServerURL и BuildSlug.
-    """
     output_exe = DIST_DIR / f"agent_{company_slug}.exe"
 
-    # ldflags для передачи compile-time переменных в Go
     ldflags = (
         f"-X main.CompanyIDStr={config['company_id']} "
+        f"-X main.CompanySlug='{company_slug}' "
         f"-X main.ServerURL={config['server_url']} "
-        f"-X main.BuildSlug={company_slug}"
+        f"-X main.BuildSlug='{settings.AGENT_BUILD_SLUG}'"
     )
 
-    print("LDFLAGS:", " ".join(ldflags))
-
     print(f"[+] Building {output_exe.name}")
+    print("    CompanySlug:", company_slug)
+    print("    BuildSlug:", settings.AGENT_BUILD_SLUG)
 
     subprocess.run(
         [

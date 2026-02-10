@@ -32,6 +32,7 @@ import (
 */
 var (
 	CompanyIDStr string
+	CompanySlug  string
 	ServerURL    string
 	BuildSlug    string
 )
@@ -383,7 +384,7 @@ type RegisterResponse struct {
 */
 func mainLogic() {
 	log.Println("Agent starting…")
-	log.Printf("ServerURL=%s Build=%s\n", ServerURL, BuildSlug)
+	log.Printf("ServerURL=%s Build=%s\n", ServerURL, CompanySlug)
 
 	if ServerURL == "" {
 		log.Fatalln("ServerURL is empty (ldflags broken)")

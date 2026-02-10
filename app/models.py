@@ -134,3 +134,13 @@ class User(Base):
 
     def verify_password(self, password: str) -> bool:
         return pwd_context.verify(password, self.password_hash)
+
+
+class AgentBuild(Base):
+    __tablename__ = "agent_builds"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    build_slug: Mapped[str] = mapped_column(String(50), unique=True)
+    file_path: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(default=True)
