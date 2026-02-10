@@ -14,6 +14,15 @@ from app.schemas.agent import (
     DiskInfoSchema,
 )
 from sqlalchemy import select
+from app.schemas.agent_update import (
+    AgentCheckUpdateIn,
+    AgentCheckUpdateOut,
+)
+from app.models import AgentBuild
+from app.utils.hash import sha256_file
+from fastapi import Body
+from app.config import settings
+
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -47,26 +56,27 @@ async def register_agent(
     agent = result.scalars().first()
 
     if agent:
-        # 🔄 уже существует → обновляем
+        # обновляем существующего
         agent.name_pc = data.name_pc
         agent.last_seen = datetime.utcnow()
+        agent.exe_version = data.exe_version  # <-- записываем версию
     else:
-        # 🆕 первый запуск → создаём
+        # создаем нового
         token = secrets.token_urlsafe(32)
-
         agent = Agent(
             machine_uid=data.machine_uid,
             name_pc=data.name_pc,
-            company_id=company_id,
+            company_id=data.company_id,
             department_id=None,
             token=token,
             is_active=True,
             last_seen=datetime.utcnow(),
+            exe_version=data.exe_version,  # <-- версия при регистрации
         )
         session.add(agent)
         await session.flush()
 
-    # ===== additional data =====
+    # обновление additional_data
     additional = await session.get(AgentAdditionalData, agent.id)
     if not additional:
         additional = AgentAdditionalData(agent_id=agent.id)
@@ -81,11 +91,36 @@ async def register_agent(
     additional.external_ip = data.external_ip
 
     await session.commit()
+    return AgentRegisterOut(agent_uuid=agent.uuid, token=agent.token)
 
-    return AgentRegisterOut(
-        agent_uuid=agent.uuid,
-        token=agent.token,
-    )
+
+@router.post("/telemetry")
+async def agent_telemetry(
+    data: AgentTelemetryIn,
+    agent=Depends(get_agent_by_token),
+    session: AsyncSession = Depends(get_db),
+):
+    # Обновляем AgentAdditionalData
+    additional = await session.get(AgentAdditionalData, agent.id)
+    if not additional:
+        additional = AgentAdditionalData(agent_id=agent.id)
+        session.add(additional)
+
+    additional.system = data.system
+    additional.user_name = data.user_name
+    additional.ip_addr = data.ip_addr
+    additional.disks = [d.model_dump() for d in data.disks]
+    additional.total_memory = data.total_memory
+    additional.available_memory = data.available_memory
+    additional.external_ip = data.external_ip
+
+    # Обновляем exe_version в Agent
+    if data.exe_version:
+        agent.exe_version = data.exe_version
+
+    agent.last_seen = datetime.utcnow()
+    await session.commit()
+    return {"status": "ok", "agent_uuid": agent.uuid}
 
 
 @router.post("/heartbeat")
@@ -96,35 +131,35 @@ async def agent_heartbeat(
     return {"status": "ok", "agent_uuid": agent.uuid, "last_seen": agent.last_seen}
 
 
-@router.post("/telemetry")
-async def agent_telemetry(
-    data: AgentTelemetryIn,
-    agent=Depends(get_agent_by_token),
+@router.post("/check-update", response_model=AgentCheckUpdateOut)
+async def check_update(
+    data: AgentCheckUpdateIn = Body(...),
+    agent: Agent = Depends(get_agent_by_token),
     session: AsyncSession = Depends(get_db),
 ):
     """
-    Обновляет AgentAdditionalData агента.
-    Агент аутентифицирован через uuid + token.
+    Проверка доступности обновления агента
     """
-    additional = await session.get(AgentAdditionalData, agent.id)
 
-    # Если нет записи — создаём
-    if not additional:
-        additional = AgentAdditionalData(agent_id=agent.id)
-        session.add(additional)
+    # Получаем активный билд
+    result = await session.execute(
+        select(AgentBuild).where(AgentBuild.is_active.is_(True))
+    )
+    build = result.scalars().first()
 
-    # Обновляем системные данные
-    additional.system = data.system
-    additional.user_name = data.user_name
-    additional.ip_addr = data.ip_addr
-    additional.disks = [d.model_dump() for d in data.disks]
-    additional.total_memory = data.total_memory
-    additional.available_memory = data.available_memory
-    additional.external_ip = data.external_ip
+    if not build:
+        return AgentCheckUpdateOut(update=False)
 
-    # Обновляем last_seen агента
-    agent.last_seen = datetime.utcnow()
+    # Уже актуален
+    if data.build == build.build_slug:
+        return AgentCheckUpdateOut(update=False)
 
-    await session.commit()
+    sha256 = sha256_file(build.file_path)
 
-    return {"status": "ok", "agent_uuid": agent.uuid}
+    return AgentCheckUpdateOut(
+        update=True,
+        build=build.build_slug,
+        url=f"{settings.APP_HOST}/static/agents/{build.file_path.split('/')[-1]}",
+        sha256=sha256,
+        force=False,
+    )

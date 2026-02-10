@@ -14,6 +14,8 @@ class AgentRegisterIn(BaseModel):
     name_pc: str
     company_id: int
 
+    exe_version: str | None = None
+
     system: str | None = None
     user_name: str | None = None
     ip_addr: str | None = None
@@ -37,3 +39,4 @@ class AgentTelemetryIn(BaseModel):
     total_memory: int | None = None
     available_memory: int | None = None
     external_ip: str | None = None
+    exe_version: str | None = None
