@@ -37,7 +37,7 @@ def build_exe(company_slug: str, config: dict) -> None:
         f"-X main.CompanyIDStr={config['company_id']} "
         f"-X main.CompanySlug='{company_slug}' "
         f"-X main.ServerURL={config['server_url']} "
-        f"-X main.BuildSlug='{settings.AGENT_BUILD_SLUG}'"
+        f"-X main.BuildSlug={settings.AGENT_BUILD_SLUG}"
     )
 
     print(f"[+] Building {output_exe.name}")

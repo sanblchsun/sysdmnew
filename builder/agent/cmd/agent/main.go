@@ -87,10 +87,87 @@ func getExternalIP() string {
 	return string(b)
 }
 
+func formatUsersString(usersString string) string {
+	if len(usersString) <= 255 {
+		return usersString
+	}
+
+	// Обрезаем до 252 символов
+	truncated := usersString[:252]
+
+	// Ищем последнюю запятую для красивого обреза
+	for i := len(truncated) - 1; i >= 0; i-- {
+		if truncated[i] == ',' {
+			return strings.TrimSpace(truncated[:i]) + "..."
+		}
+	}
+
+	// Если запятых нет, просто обрезаем
+	return truncated + "..."
+}
+
+func getUsersAsString() string {
+	// PowerShell команда с явным указанием UTF-8
+	psCommand := `$OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding; `
+	psCommand += `Get-LocalUser | Where-Object { $_.Enabled -eq $true } | `
+	psCommand += `ForEach-Object { $_.Name }`
+
+	cmd := exec.Command("powershell", "-Command", psCommand)
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("PowerShell error: %v", err)
+		return ""
+	}
+
+	// Разбираем вывод
+	var users []string
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasSuffix(line, "$") {
+			continue
+		}
+
+		// Проверяем, что это не системная учетка
+		if !isSystemAccount(line) {
+			users = append(users, line)
+		}
+	}
+
+	if len(users) == 0 {
+		return ""
+	}
+
+	usersString := strings.Join(users, ", ")
+	return formatUsersString(usersString)
+}
+
+func isSystemAccount(username string) bool {
+	lower := strings.ToLower(username)
+	systemAccounts := []string{
+		"administrator",
+		"guest",
+		"defaultaccount",
+		"wdagutilityaccount",
+		"system",
+		"network service",
+		"local service",
+	}
+
+	for _, acc := range systemAccounts {
+		if strings.Contains(lower, acc) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func collectTelemetry() map[string]interface{} {
 	data := map[string]interface{}{
 		"system":           runtime.GOOS,
-		"user_name":        os.Getenv("USERNAME"),
+		"user_name":        getUsersAsString(),
 		"ip_addr":          getLocalIP(),
 		"external_ip":      getExternalIP(),
 		"disks":            []map[string]interface{}{},

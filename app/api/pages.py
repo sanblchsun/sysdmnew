@@ -67,6 +67,7 @@ async def top_panel(
                 Agent.id,
                 Agent.name_pc,
                 Agent.last_seen,  # серверное время последнего heartbeat
+                Agent.exe_version,  # серверное время последнего heartbeat
                 AgentAdditionalData.system,
                 AgentAdditionalData.user_name,
                 AgentAdditionalData.ip_addr,
@@ -109,6 +110,7 @@ async def top_panel(
                     "company_name": row.company_name,
                     "department_name": row.department_name,
                     "is_online": is_online,
+                    "exe_version": row.exe_version,
                 }
             )
 
