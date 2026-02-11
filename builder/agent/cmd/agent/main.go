@@ -3,7 +3,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +37,21 @@ var httpClient = &http.Client{
 	Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	},
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func getExePath() string {
@@ -213,51 +230,88 @@ func postJSON(url string, payload interface{}) ([]byte, int, error) {
 }
 
 type UpdateResponse struct {
-	Update  bool   `json:"update"`
-	Version string `json:"version"`
-	URL     string `json:"url"`
+	Update bool   `json:"update"`
+	Build  string `json:"build"`
+	URL    string `json:"url"`
+	Sha256 string `json:"sha256"`
+	Force  bool   `json:"force"`
 }
 
 func checkForUpdate(uuid, token string) {
-	url := fmt.Sprintf("%s/api/agent/check-update?uuid=%s&token=%s", ServerURL, uuid, token)
-	resp, err := httpClient.Post(url, "application/json", nil)
+	payload := map[string]interface{}{
+		"uuid":  uuid,
+		"token": token,
+		"build": BuildSlug,
+	}
+
+	body, _, err := postJSON(ServerURL+"/api/agent/check-update", payload)
 	if err != nil {
+		log.Println("Update check failed:", err)
+		return
+	}
+
+	var u UpdateResponse
+	if err := json.Unmarshal(body, &u); err != nil {
+		log.Println("Invalid update response:", err)
+		return
+	}
+
+	if !u.Update {
+		return
+	}
+
+	log.Println("New version available:", u.Build)
+
+	exePath := getExePath()
+	tmpPath := exePath + ".new"
+
+	// ---- download file ----
+	resp, err := httpClient.Get(u.URL)
+	if err != nil {
+		log.Println("Download failed:", err)
 		return
 	}
 	defer resp.Body.Close()
 
-	var u UpdateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
-		return
-	}
-
-	if !u.Update || u.Version == BuildSlug {
-		return
-	}
-
-	log.Println("Updating agent to", u.Version)
-
-	exePath := getExePath()
-	tmp := exePath + ".new"
-
-	r, err := httpClient.Get(u.URL)
+	out, err := os.Create(tmpPath)
 	if err != nil {
+		log.Println("Cannot create tmp file:", err)
 		return
 	}
-	defer r.Body.Close()
 
-	f, _ := os.Create(tmp)
-	io.Copy(f, r.Body)
-	f.Close()
+	_, err = io.Copy(out, resp.Body)
+	out.Close()
+	if err != nil {
+		log.Println("Download copy failed:", err)
+		os.Remove(tmpPath)
+		return
+	}
 
+	// ---- SHA256 verify ----
+	hash, err := sha256File(tmpPath)
+	if err != nil {
+		log.Println("Hash calculation failed:", err)
+		os.Remove(tmpPath)
+		return
+	}
+
+	if hash != u.Sha256 {
+		log.Println("SHA256 mismatch! Aborting update.")
+		os.Remove(tmpPath)
+		return
+	}
+
+	log.Println("SHA256 verified. Applying update...")
+
+	// ---- replace binary ----
 	os.Rename(exePath, exePath+".old")
-	os.Rename(tmp, exePath)
+	os.Rename(tmpPath, exePath)
 
-	// Отправляем новую версию на сервер перед перезапуском
+	// ---- notify server ----
 	postJSON(
 		fmt.Sprintf("%s/api/agent/telemetry?uuid=%s&token=%s", ServerURL, uuid, token),
 		map[string]interface{}{
-			"exe_version": u.Version,
+			"exe_version": u.Build,
 		},
 	)
 

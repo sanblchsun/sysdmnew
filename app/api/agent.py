@@ -1,4 +1,6 @@
 # app/api/agent.py
+from loguru import logger
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,29 +139,44 @@ async def check_update(
     agent: Agent = Depends(get_agent_by_token),
     session: AsyncSession = Depends(get_db),
 ):
-    """
-    Проверка доступности обновления агента
-    """
+    # Логируем входной JSON
+    logger.info("Agent check-update request: %s", data.dict())
 
-    # Получаем активный билд
+    # 1️⃣ Получаем активный билд
     result = await session.execute(
         select(AgentBuild).where(AgentBuild.is_active.is_(True))
     )
     build = result.scalars().first()
 
     if not build:
+        logger.info("No active build found, update not needed")
         return AgentCheckUpdateOut(update=False)
 
-    # Уже актуален
+    # 2️⃣ Если версия совпадает — обновление не нужно
     if data.build == build.build_slug:
+        logger.info("Agent already has the latest build: %s", build.build_slug)
         return AgentCheckUpdateOut(update=False)
 
-    sha256 = sha256_file(build.file_path)
+    # 3️⃣ Формируем путь к файлу точно как у тебя
+    company_slug = agent.company.slug
+    filename = f"agent_{company_slug}_{build.build_slug}.exe"
+    filepath = os.path.join("builder", "dist", "agents", filename)
 
+    # 4️⃣ Проверяем существование файла
+    if not os.path.isfile(filepath):
+        logger.error(
+            "Agent update requested but file not found: %s (company: %s, build: %s)",
+            filepath,
+            company_slug,
+            build.build_slug,
+        )
+        return AgentCheckUpdateOut(update=False)
+
+    # 5️⃣ Возвращаем информацию об обновлении
     return AgentCheckUpdateOut(
         update=True,
         build=build.build_slug,
-        url=f"{settings.APP_HOST}/static/agents/{build.file_path.split('/')[-1]}",
-        sha256=sha256,
+        url=f"{settings.APP_HOST}/{filepath}",
+        sha256=build.sha256,  # из базы
         force=False,
     )

@@ -46,7 +46,7 @@ async def top_panel(
         "Компания",
         "Отдел",
         "Online",
-        "exe_version",
+        "exe_v",
     ]
 
     if not target_id or not target_type:

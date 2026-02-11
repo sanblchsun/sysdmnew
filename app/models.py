@@ -1,6 +1,6 @@
 # app/models.py
 from datetime import datetime
-from sqlalchemy import JSON, ForeignKey, String, DateTime, Boolean, Integer
+from sqlalchemy import JSON, ForeignKey, Index, String, DateTime, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from passlib.context import CryptContext
@@ -141,6 +141,15 @@ class AgentBuild(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     build_slug: Mapped[str] = mapped_column(String(50), unique=True)
-    file_path: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
+
+    __table_args__ = (
+        # Partial index: только одна запись с is_active=True
+        Index(
+            "uq_agent_build_active",
+            "is_active",
+            unique=True,
+            postgresql_where=(is_active.is_(True)),
+        ),
+    )

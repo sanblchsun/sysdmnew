@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     # ALGORITHM: ClassVar[str] = "HS256"
 
     # === Агенты ===
-    AGENT_BUILD_SLUG: str
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
 
