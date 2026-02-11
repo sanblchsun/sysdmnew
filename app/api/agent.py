@@ -135,48 +135,41 @@ async def agent_heartbeat(
 
 @router.post("/check-update", response_model=AgentCheckUpdateOut)
 async def check_update(
-    data: AgentCheckUpdateIn = Body(...),
+    data: AgentCheckUpdateIn,
     agent: Agent = Depends(get_agent_by_token),
     session: AsyncSession = Depends(get_db),
 ):
-    # Логируем входной JSON
-    logger.info("Agent check-update request: %s", data.dict())
+    logger.info(
+        "Agent %s check-update. Current build: %s",
+        agent.uuid,
+        data.build,
+    )
 
-    # 1️⃣ Получаем активный билд
+    # активный билд
     result = await session.execute(
         select(AgentBuild).where(AgentBuild.is_active.is_(True))
     )
-    build = result.scalars().first()
+    active_build = result.scalars().first()
 
-    if not build:
-        logger.info("No active build found, update not needed")
+    if not active_build:
         return AgentCheckUpdateOut(update=False)
 
-    # 2️⃣ Если версия совпадает — обновление не нужно
-    if data.build == build.build_slug:
-        logger.info("Agent already has the latest build: %s", build.build_slug)
+    # если версия совпадает
+    if data.build == active_build.build_slug:
         return AgentCheckUpdateOut(update=False)
 
-    # 3️⃣ Формируем путь к файлу точно как у тебя
     company_slug = agent.company.slug
-    filename = f"agent_{company_slug}_{build.build_slug}.exe"
+    filename = f"agent_{company_slug}_{active_build.build_slug}.exe"
     filepath = os.path.join("builder", "dist", "agents", filename)
 
-    # 4️⃣ Проверяем существование файла
     if not os.path.isfile(filepath):
-        logger.error(
-            "Agent update requested but file not found: %s (company: %s, build: %s)",
-            filepath,
-            company_slug,
-            build.build_slug,
-        )
+        logger.error("Build file not found: %s", filepath)
         return AgentCheckUpdateOut(update=False)
 
-    # 5️⃣ Возвращаем информацию об обновлении
     return AgentCheckUpdateOut(
         update=True,
-        build=build.build_slug,
+        build=active_build.build_slug,
         url=f"{settings.APP_HOST}/{filepath}",
-        sha256=build.sha256,  # из базы
+        sha256=active_build.sha256,
         force=False,
     )

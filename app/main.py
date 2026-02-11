@@ -1,5 +1,6 @@
 # app/main.py
 import os
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -19,6 +20,14 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 static_path = os.path.join(current_dir, "static")
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+app.mount(
+    "/builder",
+    StaticFiles(directory=BASE_DIR / "builder"),
+    name="builder",
+)
 
 # API
 app.include_router(web_cookie.router, tags=["web"])

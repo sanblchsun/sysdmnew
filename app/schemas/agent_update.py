@@ -1,11 +1,8 @@
-# app/schemas/agent_update.py
 from pydantic import BaseModel
 from typing import Optional
 
 
 class AgentCheckUpdateIn(BaseModel):
-    uuid: str
-    token: str
     build: str
 
 

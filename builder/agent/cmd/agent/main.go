@@ -238,15 +238,27 @@ type UpdateResponse struct {
 }
 
 func checkForUpdate(uuid, token string) {
+	// uuid и token — в query
+	url := fmt.Sprintf(
+		"%s/api/agent/check-update?uuid=%s&token=%s",
+		ServerURL,
+		uuid,
+		token,
+	)
+
+	// В body отправляем ТОЛЬКО build
 	payload := map[string]interface{}{
-		"uuid":  uuid,
-		"token": token,
 		"build": BuildSlug,
 	}
 
-	body, _, err := postJSON(ServerURL+"/api/agent/check-update", payload)
+	body, status, err := postJSON(url, payload)
 	if err != nil {
 		log.Println("Update check failed:", err)
+		return
+	}
+
+	if status != 200 {
+		log.Printf("Update check returned status %d: %s\n", status, string(body))
 		return
 	}
 
