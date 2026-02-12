@@ -1,4 +1,6 @@
 # app/api/agent.py
+from pathlib import Path
+from fastapi.responses import FileResponse
 from loguru import logger
 import os
 from fastapi import APIRouter, Depends, HTTPException
@@ -169,7 +171,38 @@ async def check_update(
     return AgentCheckUpdateOut(
         update=True,
         build=active_build.build_slug,
-        url=f"{settings.APP_HOST}/{filepath}",
+        url=(
+            f"{settings.APP_HOST}/api/agent/download"
+            f"?build={active_build.build_slug}"
+            f"&uuid={agent.uuid}"
+            f"&token={agent.token}"
+        ),
         sha256=active_build.sha256,
         force=False,
+    )
+
+
+@router.get("/download")
+async def download_agent_build(
+    build: str,
+    agent: Agent = Depends(get_agent_by_token),
+):
+    """
+    Защищённая загрузка билда.
+    Доступна только агенту с валидным uuid+token.
+    """
+
+    company_slug = agent.company.slug
+    filename = f"agent_{company_slug}_{build}.exe"
+
+    base_path = Path("builder") / "dist" / "agents"
+    file_path = base_path / filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Build file not found")
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream",
     )

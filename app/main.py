@@ -21,13 +21,6 @@ static_path = os.path.join(current_dir, "static")
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-app.mount(
-    "/builder",
-    StaticFiles(directory=BASE_DIR / "builder"),
-    name="builder",
-)
 
 # API
 app.include_router(web_cookie.router, tags=["web"])
