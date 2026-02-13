@@ -1,5 +1,5 @@
 # docker-compose.yml
-version: '3.8'
+version: "3.8"
 
 services:
   db:
@@ -8,8 +8,8 @@ services:
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-# ⚠️ ПРИ ИЗМЕНЕНИИ ПАРОЛЯ ВЫПОЛНИТЕ:
-# ⚠️ docker-compose exec db psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'НОВЫЙ_ПАРОЛЬ';"
+      # ⚠️ ПРИ ИЗМЕНЕНИИ ПАРОЛЯ ВЫПОЛНИТЕ:
+      # ⚠️ docker-compose exec db psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'НОВЫЙ_ПАРОЛЬ';"
       POSTGRES_DB: ${DB_NAME}
     ports:
       - "5432:5432"
@@ -26,7 +26,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-#    restart: always
+  #    restart: always
 
   app:
     build:
@@ -50,16 +50,12 @@ services:
     volumes:
       # Монтируем исходный код для разработки
       - .:/app
-      # Монтируем логи и загрузки
-      - ./logs:/app/logs
-      - ./uploads:/app/uploads
-      - ./backups:/app/backups
     env_file:
       - .env
     networks:
       - sysdm_network
     restart: unless-stopped
-#    restart: always
+    #    restart: always
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.sysdm.rule=Host(`sysdm.local`)"
@@ -82,7 +78,6 @@ services:
       - sysdm_network
     restart: unless-stopped
 
-
   certbot:
     image: certbot/certbot
     container_name: certbot
@@ -91,8 +86,6 @@ services:
       - ./certbot/www:/var/www/certbot
     networks:
       - sysdm_network
-
-
 
 networks:
   sysdm_network:
