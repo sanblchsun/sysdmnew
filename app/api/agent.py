@@ -233,7 +233,7 @@ async def download_agent_build(
     """
 
     company_slug = agent.company.slug
-    filename = f"agent_{company_slug}_{build}.exe"
+    filename = f"agent_universal_{build}.exe"
 
     base_path = Path("builder") / "dist" / "agents"
     file_path = base_path / filename
