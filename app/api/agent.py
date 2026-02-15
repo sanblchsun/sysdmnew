@@ -201,11 +201,11 @@ async def check_update(
         return AgentCheckUpdateOut(update=False)
 
     company_slug = agent.company.slug
-    filename = f"agent_{company_slug}_{active_build.build_slug}.exe"
+    filename = f"agent_universal_{active_build.build_slug}.exe"
     filepath = os.path.join("builder", "dist", "agents", filename)
 
     if not os.path.isfile(filepath):
-        logger.error(f"Build file not found: {filepath}")
+        logger.error(f"Build file not found (check_update): {filepath}")
         return AgentCheckUpdateOut(update=False)
 
     return AgentCheckUpdateOut(
@@ -232,13 +232,13 @@ async def download_agent_build(
     Доступна только агенту с валидным uuid+token.
     """
 
-    company_slug = agent.company.slug
     filename = f"agent_universal_{build}.exe"
 
     base_path = Path("builder") / "dist" / "agents"
     file_path = base_path / filename
 
     if not file_path.exists():
+        logger.error(f"Build file not found (download): {file_path}")
         raise HTTPException(status_code=404, detail="Build file not found")
 
     return FileResponse(
