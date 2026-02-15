@@ -205,7 +205,7 @@ async def check_update(
     filepath = os.path.join("builder", "dist", "agents", filename)
 
     if not os.path.isfile(filepath):
-        logger.error("Build file not found: %s", filepath)
+        logger.error(f"Build file not found: {filepath}")
         return AgentCheckUpdateOut(update=False)
 
     return AgentCheckUpdateOut(
