@@ -12,10 +12,9 @@ class DiskInfoSchema(BaseModel):
 class AgentRegisterIn(BaseModel):
     machine_uid: str
     name_pc: str
-    company_id: int
 
     exe_version: str | None = None
-
+    company_id: Optional[int] = None
     system: str | None = None
     user_name: str | None = None
     ip_addr: str | None = None

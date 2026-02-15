@@ -38,6 +38,7 @@ async def top_panel(
     session: AsyncSession = Depends(get_db),
 ):
     agents = []
+    company = None
     columns = [
         "---",
         "Имя ПК",
@@ -49,6 +50,7 @@ async def top_panel(
         "exe_v",
     ]
 
+    # Если ничего не выбрано — просто пустая таблица
     if not target_id or not target_type:
         return templates.TemplateResponse(
             "partials/top_panel.html",
@@ -56,63 +58,68 @@ async def top_panel(
                 "request": request,
                 "agents": [],
                 "agent_columns": columns,
+                "company": None,
             },
         )
 
-    if target_id is not None and target_type is not None:
-        target_id = int(target_id)
+    target_id = int(target_id)
 
-        stmt = (
-            select(
-                Agent.id,
-                Agent.name_pc,
-                Agent.last_seen,  # серверное время последнего heartbeat
-                Agent.exe_version,  # серверное время последнего heartbeat
-                AgentAdditionalData.system,
-                AgentAdditionalData.user_name,
-                AgentAdditionalData.ip_addr,
-                Company.name.label("company_name"),
-                Department.name.label("department_name"),
-            )
-            .outerjoin(AgentAdditionalData, AgentAdditionalData.agent_id == Agent.id)
-            .outerjoin(Department, Agent.department_id == Department.id)
-            .outerjoin(Company, Agent.company_id == Company.id)
+    # Получаем компанию, если выбран target_type=company
+    if target_type == "company":
+        result = await session.execute(select(Company).where(Company.id == target_id))
+        company = result.scalars().first()
+
+    # Строим запрос агентов (может быть пустым)
+    stmt = (
+        select(
+            Agent.id,
+            Agent.name_pc,
+            Agent.last_seen,
+            Agent.exe_version,
+            AgentAdditionalData.system,
+            AgentAdditionalData.user_name,
+            AgentAdditionalData.ip_addr,
+            AgentAdditionalData.external_ip,
+            Company.name.label("company_name"),
+            Department.name.label("department_name"),
         )
+        .outerjoin(AgentAdditionalData, AgentAdditionalData.agent_id == Agent.id)
+        .outerjoin(Department, Agent.department_id == Department.id)
+        .outerjoin(Company, Agent.company_id == Company.id)
+    )
 
-        if target_type == "company":
-            stmt = stmt.where(Company.id == target_id)
-        elif target_type == "department":
-            stmt = stmt.where(Department.id == target_id)
-        elif target_type == "unassigned":
-            stmt = stmt.where(
-                Company.id == target_id,
-                Agent.department_id.is_(None),
-            )
-        else:
-            raise HTTPException(status_code=400, detail="Invalid target_type")
+    if target_type == "company":
+        stmt = stmt.where(Company.id == target_id)
+    elif target_type == "department":
+        stmt = stmt.where(Department.id == target_id)
+    elif target_type == "unassigned":
+        stmt = stmt.where(
+            Company.id == target_id,
+            Agent.department_id.is_(None),
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Invalid target_type")
 
-        result = await session.execute(stmt)
+    result = await session.execute(stmt)
 
-        now = datetime.utcnow()
-        for row in result.all():
-            # Онлайн считается только на основе серверного last_seen
-            is_online = (
-                row.last_seen is not None and (now - row.last_seen) < OFFLINE_AFTER
-            )
+    now = datetime.utcnow()
+    for row in result.all():
+        is_online = row.last_seen is not None and (now - row.last_seen) < OFFLINE_AFTER
 
-            agents.append(
-                {
-                    "id": row.id,
-                    "name_pc": row.name_pc,
-                    "system": row.system,
-                    "user_name": row.user_name,
-                    "ip_addr": row.ip_addr,
-                    "company_name": row.company_name,
-                    "department_name": row.department_name,
-                    "is_online": is_online,
-                    "exe_version": row.exe_version,
-                }
-            )
+        agents.append(
+            {
+                "id": row.id,
+                "name_pc": row.name_pc,
+                "system": row.system,
+                "user_name": row.user_name,
+                "ip_addr": row.ip_addr,
+                "external_ip": row.external_ip,  # <-- добавили внешний IP
+                "company_name": row.company_name,
+                "department_name": row.department_name,
+                "is_online": is_online,
+                "exe_version": row.exe_version,
+            }
+        )
 
     return templates.TemplateResponse(
         "partials/top_panel.html",
@@ -120,6 +127,7 @@ async def top_panel(
             "request": request,
             "agents": agents,
             "agent_columns": columns,
+            "company": company,  # <-- теперь доступна в шаблоне
         },
     )
 

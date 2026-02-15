@@ -1,10 +1,8 @@
-// builder/agent/cmd/agent/main.go
 package main
 
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,32 +23,27 @@ import (
 )
 
 var (
-	CompanyIDStr string
-	CompanySlug  string
-	ServerURL    string
-	BuildSlug    string
+	ServerURL string
+	BuildSlug string
 )
 
 var httpClient = &http.Client{
 	Timeout: 15 * time.Second,
-	Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	},
 }
 
-func sha256File(path string) (string, error) {
-	f, err := os.Open(path)
+// ==================== HELPERS ====================
+
+func setupFileLogger() {
+	exeDir := filepath.Dir(getExePath())
+	logPath := filepath.Join(exeDir, "agent.log")
+
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+		return
 	}
 
-	return hex.EncodeToString(h.Sum(nil)), nil
+	log.SetOutput(f)
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
 func getExePath() string {
@@ -97,6 +89,7 @@ func getLocalIP() string {
 func getExternalIP() string {
 	resp, err := httpClient.Get("https://api.ipify.org")
 	if err != nil {
+		log.Println("External IP error:", err)
 		return ""
 	}
 	defer resp.Body.Close()
@@ -104,82 +97,7 @@ func getExternalIP() string {
 	return string(b)
 }
 
-func formatUsersString(usersString string) string {
-	if len(usersString) <= 255 {
-		return usersString
-	}
-
-	// Обрезаем до 252 символов
-	truncated := usersString[:252]
-
-	// Ищем последнюю запятую для красивого обреза
-	for i := len(truncated) - 1; i >= 0; i-- {
-		if truncated[i] == ',' {
-			return strings.TrimSpace(truncated[:i]) + "..."
-		}
-	}
-
-	// Если запятых нет, просто обрезаем
-	return truncated + "..."
-}
-
-func getUsersAsString() string {
-	// PowerShell команда с явным указанием UTF-8
-	psCommand := `$OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding; `
-	psCommand += `Get-LocalUser | Where-Object { $_.Enabled -eq $true } | `
-	psCommand += `ForEach-Object { $_.Name }`
-
-	cmd := exec.Command("powershell", "-Command", psCommand)
-	output, err := cmd.Output()
-	if err != nil {
-		log.Printf("PowerShell error: %v", err)
-		return ""
-	}
-
-	// Разбираем вывод
-	var users []string
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasSuffix(line, "$") {
-			continue
-		}
-
-		// Проверяем, что это не системная учетка
-		if !isSystemAccount(line) {
-			users = append(users, line)
-		}
-	}
-
-	if len(users) == 0 {
-		return ""
-	}
-
-	usersString := strings.Join(users, ", ")
-	return formatUsersString(usersString)
-}
-
-func isSystemAccount(username string) bool {
-	lower := strings.ToLower(username)
-	systemAccounts := []string{
-		"administrator",
-		"guest",
-		"defaultaccount",
-		"wdagutilityaccount",
-		"system",
-		"network service",
-		"local service",
-	}
-
-	for _, acc := range systemAccounts {
-		if strings.Contains(lower, acc) {
-			return true
-		}
-	}
-
-	return false
-}
+// ==================== TELEMETRY ====================
 
 func collectTelemetry() map[string]interface{} {
 	data := map[string]interface{}{
@@ -214,6 +132,43 @@ func collectTelemetry() map[string]interface{} {
 	return data
 }
 
+func getUsersAsString() string {
+	psCommand := `$OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding; `
+	psCommand += `Get-LocalUser | Where-Object { $_.Enabled -eq $true } | ForEach-Object { $_.Name }`
+
+	cmd := exec.Command("powershell", "-Command", psCommand)
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	var users []string
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasSuffix(line, "$") {
+			continue
+		}
+		if !isSystemAccount(line) {
+			users = append(users, line)
+		}
+	}
+	return strings.Join(users, ", ")
+}
+
+func isSystemAccount(username string) bool {
+	lower := strings.ToLower(username)
+	systemAccounts := []string{"administrator", "guest", "defaultaccount", "wdagutilityaccount", "system", "network service", "local service"}
+	for _, acc := range systemAccounts {
+		if strings.Contains(lower, acc) {
+			return true
+		}
+	}
+	return false
+}
+
+// ==================== HTTP HELPERS ====================
+
 func postJSON(url string, payload interface{}) ([]byte, int, error) {
 	b, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(b))
@@ -229,6 +184,24 @@ func postJSON(url string, payload interface{}) ([]byte, int, error) {
 	return body, resp.StatusCode, nil
 }
 
+// ==================== SHA256 ====================
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// ==================== UPDATE ====================
+
 type UpdateResponse struct {
 	Update bool   `json:"update"`
 	Build  string `json:"build"`
@@ -238,49 +211,31 @@ type UpdateResponse struct {
 }
 
 func checkForUpdate(uuid, token string) {
-	// uuid и token — в query
-	url := fmt.Sprintf(
-		"%s/api/agent/check-update?uuid=%s&token=%s",
-		ServerURL,
-		uuid,
-		token,
-	)
-
-	// В body отправляем ТОЛЬКО build
-	payload := map[string]interface{}{
-		"build": BuildSlug,
-	}
-
+	url := fmt.Sprintf("%s/api/agent/check-update?uuid=%s&token=%s", ServerURL, uuid, token)
+	payload := map[string]interface{}{"build": BuildSlug}
 	body, status, err := postJSON(url, payload)
-	if err != nil {
-		log.Println("Update check failed:", err)
+	if err != nil || status != 200 {
+		log.Println("Update check failed:", err, string(body))
 		return
 	}
 
-	if status != 200 {
-		log.Printf("Update check returned status %d: %s\n", status, string(body))
-		return
-	}
-
-	var u UpdateResponse
-	if err := json.Unmarshal(body, &u); err != nil {
+	var updateResp UpdateResponse
+	if err := json.Unmarshal(body, &updateResp); err != nil {
 		log.Println("Invalid update response:", err)
 		return
 	}
 
-	if !u.Update {
+	if !updateResp.Update {
 		return
 	}
 
-	log.Println("New version available:", u.Build)
-
+	log.Println("New version available:", updateResp.Build)
 	exePath := getExePath()
 	tmpPath := exePath + ".new"
 
-	// ---- download file ----
-	resp, err := httpClient.Get(u.URL)
-	if err != nil {
-		log.Println("Download failed:", err)
+	resp, err := httpClient.Get(updateResp.URL)
+	if err != nil || resp.StatusCode != 200 {
+		log.Println("Download failed:", err, resp.Status)
 		return
 	}
 	defer resp.Body.Close()
@@ -290,7 +245,6 @@ func checkForUpdate(uuid, token string) {
 		log.Println("Cannot create tmp file:", err)
 		return
 	}
-
 	_, err = io.Copy(out, resp.Body)
 	out.Close()
 	if err != nil {
@@ -299,58 +253,47 @@ func checkForUpdate(uuid, token string) {
 		return
 	}
 
-	// ---- SHA256 verify ----
 	hash, err := sha256File(tmpPath)
-	if err != nil {
-		log.Println("Hash calculation failed:", err)
-		os.Remove(tmpPath)
-		return
-	}
-
-	if hash != u.Sha256 {
+	if err != nil || hash != updateResp.Sha256 {
 		log.Println("SHA256 mismatch! Aborting update.")
 		os.Remove(tmpPath)
 		return
 	}
 
-	log.Println("SHA256 verified. Applying update...")
+	if err := os.Rename(exePath, exePath+".old"); err != nil {
+		log.Println("Rename old failed:", err)
+		return
+	}
+	if err := os.Rename(tmpPath, exePath); err != nil {
+		log.Println("Rename new failed:", err)
+		os.Rename(exePath+".old", exePath)
+		return
+	}
 
-	// ---- replace binary ----
-	os.Rename(exePath, exePath+".old")
-	os.Rename(tmpPath, exePath)
-
-	// ---- notify server ----
-	postJSON(
-		fmt.Sprintf("%s/api/agent/telemetry?uuid=%s&token=%s", ServerURL, uuid, token),
-		map[string]interface{}{
-			"exe_version": u.Build,
-		},
-	)
+	postJSON(fmt.Sprintf("%s/api/agent/telemetry?uuid=%s&token=%s", ServerURL, uuid, token),
+		map[string]interface{}{"exe_version": updateResp.Build})
 
 	exec.Command(exePath).Start()
 	os.Exit(0)
 }
 
+// ==================== MAIN LOGIC ====================
+
 func mainLogic() {
 	log.Println("Agent started", BuildSlug)
-
-	companyID, _ := strconv.Atoi(CompanyIDStr)
-	hostname, _ := os.Hostname()
 	machineUID := loadOrCreateMachineUID()
+	hostname, _ := os.Hostname()
 
 	var uuid, token string
 
-	// =========================
-	// Registration с exe_version
-	// =========================
+	// Регистрация без company_id
 	for {
 		resp, code, err := postJSON(ServerURL+"/api/agent/register", map[string]interface{}{
 			"name_pc":     hostname,
 			"machine_uid": machineUID,
-			"company_id":  companyID,
 			"exe_version": BuildSlug,
+			"external_ip": getExternalIP(),
 		})
-
 		if err == nil && code == 200 {
 			var r struct {
 				AgentUUID string `json:"agent_uuid"`
@@ -363,15 +306,9 @@ func mainLogic() {
 		time.Sleep(10 * time.Second)
 	}
 
-	// =========================
-	// Initial telemetry
-	// =========================
 	telemetry := collectTelemetry()
 	telemetry["exe_version"] = BuildSlug
-	postJSON(
-		fmt.Sprintf("%s/api/agent/telemetry?uuid=%s&token=%s", ServerURL, uuid, token),
-		telemetry,
-	)
+	postJSON(fmt.Sprintf("%s/api/agent/telemetry?uuid=%s&token=%s", ServerURL, uuid, token), telemetry)
 
 	ticker := time.NewTicker(10 * time.Second)
 	updateTicker := time.NewTicker(60 * time.Second)
@@ -379,27 +316,23 @@ func mainLogic() {
 	for {
 		select {
 		case <-ticker.C:
-			httpClient.Post(
-				fmt.Sprintf("%s/api/agent/heartbeat?uuid=%s&token=%s", ServerURL, uuid, token),
-				"application/json", nil,
-			)
+			httpClient.Post(fmt.Sprintf("%s/api/agent/heartbeat?uuid=%s&token=%s", ServerURL, uuid, token), "application/json", nil)
 		case <-updateTicker.C:
 			checkForUpdate(uuid, token)
 		}
 	}
 }
 
+// ==================== SERVICE ====================
+
 type Program struct{}
 
-func (p *Program) Start(s service.Service) error {
-	go mainLogic()
-	return nil
-}
-func (p *Program) Stop(s service.Service) error { return nil }
+func (p *Program) Start(s service.Service) error { go mainLogic(); return nil }
+func (p *Program) Stop(s service.Service) error  { return nil }
 
 func main() {
+	setupFileLogger()
 	exe := getExePath()
-
 	cfg := &service.Config{
 		Name:        "SystemMonitoringAgent",
 		DisplayName: "System Monitoring Agent",

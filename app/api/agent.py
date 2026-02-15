@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from loguru import logger
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 import secrets
@@ -15,7 +15,6 @@ from app.schemas.agent import (
     AgentRegisterIn,
     AgentRegisterOut,
     AgentTelemetryIn,
-    DiskInfoSchema,
 )
 from sqlalchemy import select
 from app.schemas.agent_update import (
@@ -27,60 +26,100 @@ from app.utils.hash import sha256_file
 from fastapi import Body
 from app.config import settings
 
-
+# -------------------- TOP PANEL --------------------
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 
 @router.post("/register", response_model=AgentRegisterOut)
 async def register_agent(
+    request: Request,
     data: AgentRegisterIn,
     session: AsyncSession = Depends(get_db),
 ):
     """
     Регистрация нового агента или обновление существующего.
-    Принимает company_id от агента.
+    Автоматическое определение компании по external_ip.
     """
+
+    # -------------------------
+    # 1. Определяем IP агента
+    # -------------------------
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    elif request.client:
+        client_ip = request.client.host
+    else:
+        client_ip = None
+
+    # если внешнее поле передали, используем его
+    if data.external_ip:
+        client_ip = data.external_ip
+
+    if not client_ip:
+        raise HTTPException(status_code=400, detail="Cannot determine client IP")
+
+    # -------------------------
+    # 2. Определяем компанию
+    # -------------------------
     company_id = data.company_id
 
-    # Проверяем, существует ли компания с таким ID
-    result = await session.execute(select(Company).where(Company.id == company_id))
-    company = result.scalars().first()
-
-    if not company:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Company with ID {company_id} not found. "
-            f"Make sure the company exists in the database.",
+    if not company_id:
+        # ищем компанию по external_ip
+        result = await session.execute(
+            select(Company).where(Company.external_ip == client_ip)
         )
+        company = result.scalars().first()
+        if company:
+            company_id = company.id
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot determine company for agent with IP {client_ip}. Pass company_id explicitly.",
+            )
+    else:
+        # проверяем, что компания существует
+        company = await session.get(Company, company_id)
+        if not company:
+            raise HTTPException(
+                status_code=404, detail=f"Company with id {company_id} not found"
+            )
 
-    # 🔍 Ищем агента по machine_uid
+    # -------------------------
+    # 3. Ищем агента по machine_uid
+    # -------------------------
     result = await session.execute(
         select(Agent).where(Agent.machine_uid == data.machine_uid)
     )
     agent = result.scalars().first()
 
+    now = datetime.utcnow()
+
     if agent:
         # обновляем существующего
         agent.name_pc = data.name_pc
-        agent.last_seen = datetime.utcnow()
-        agent.exe_version = data.exe_version  # <-- записываем версию
+        agent.last_seen = now
+        agent.company_id = company_id
+        agent.exe_version = data.exe_version
     else:
-        # создаем нового
+        # создаём нового
         token = secrets.token_urlsafe(32)
         agent = Agent(
             machine_uid=data.machine_uid,
             name_pc=data.name_pc,
-            company_id=data.company_id,
+            company_id=company_id,
             department_id=None,
             token=token,
             is_active=True,
-            last_seen=datetime.utcnow(),
-            exe_version=data.exe_version,  # <-- версия при регистрации
+            last_seen=now,
+            exe_version=data.exe_version,
         )
         session.add(agent)
         await session.flush()
 
-    # обновление additional_data
+    # -------------------------
+    # 4. Обновляем additional_data
+    # -------------------------
     additional = await session.get(AgentAdditionalData, agent.id)
     if not additional:
         additional = AgentAdditionalData(agent_id=agent.id)
@@ -88,13 +127,14 @@ async def register_agent(
 
     additional.system = data.system
     additional.user_name = data.user_name
-    additional.ip_addr = data.ip_addr
+    additional.ip_addr = client_ip
     additional.disks = [d.model_dump() for d in data.disks]
     additional.total_memory = data.total_memory
     additional.available_memory = data.available_memory
-    additional.external_ip = data.external_ip
+    additional.external_ip = client_ip
 
     await session.commit()
+
     return AgentRegisterOut(agent_uuid=agent.uuid, token=agent.token)
 
 
@@ -206,3 +246,19 @@ async def download_agent_build(
         filename=filename,
         media_type="application/octet-stream",
     )
+
+
+@router.post("/company/{company_id}/set-external-ip")
+async def set_external_ip(
+    company_id: int,
+    external_ip: str = Form(...),
+    session: AsyncSession = Depends(get_db),
+):
+    company = await session.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    company.external_ip = external_ip
+    await session.commit()
+
+    return {"status": "ok", "external_ip": company.external_ip}

@@ -1,5 +1,22 @@
 <!-- app/templates/partials/top_panel.html -->
-{% if agents %}
+{% if company %}
+<div class="company-ip-form">
+  <form
+    hx-post="/api/agent/company/{{ company.id }}/set-external-ip"
+    hx-target="#top-right"
+    hx-swap="innerHTML"
+  >
+    <label>Внешний IP:</label>
+    <input
+      type="text"
+      name="external_ip"
+      value="{{ company.external_ip or '' }}"
+      placeholder="0.0.0.0"
+    />
+    <button type="submit">Сохранить</button>
+  </form>
+</div>
+{% endif %} {% if agents %}
 <table class="agents-table">
   <thead>
     <tr>
@@ -50,5 +67,8 @@
   </tbody>
 </table>
 {% else %}
-<div class="empty-panel">Выберите Company / Department / Unassigned слева</div>
+<div class="empty-panel">
+  {% if company %} У компании пока нет агентов. {% else %} Выберите Company /
+  Department / Unassigned слева {% endif %}
+</div>
 {% endif %}

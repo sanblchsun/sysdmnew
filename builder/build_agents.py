@@ -11,8 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.models import Company, AgentBuild
-
+from app.models import AgentBuild
 
 # ===================== PATHS =====================
 
@@ -25,18 +24,11 @@ GO_ENTRYPOINT = GO_AGENT_DIR / "cmd" / "agent"
 GOOS = "windows"
 GOARCH = "amd64"
 
-
 # ===================== HELPERS =====================
 
 
-def slugify(name: str) -> str:
-    return name.lower().replace(" ", "_").replace("-", "_")
-
-
 def increment_build_slug(last_slug: str | None) -> str:
-    """
-    Формат: 1.0.X
-    """
+    """Формат: 1.0.X"""
     if not last_slug:
         return "1.0.0"
 
@@ -57,18 +49,15 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_exe(company_slug: str, build_slug: str, config: dict) -> Path:
-    output_exe = DIST_DIR / f"agent_{company_slug}_{build_slug}.exe"
+def build_exe(build_slug: str) -> Path:
+    """Строим один универсальный exe без company_id"""
+    output_exe = DIST_DIR / f"agent_universal_{build_slug}.exe"
 
     ldflags = (
-        f"-X main.CompanyIDStr={config['company_id']} "
-        f"-X main.CompanySlug={company_slug} "
-        f"-X main.ServerURL={config['server_url']} "
-        f"-X main.BuildSlug={build_slug}"
+        f"-X main.ServerURL={settings.APP_HOST} " f"-X main.BuildSlug={build_slug}"
     )
 
     print(f"[+] Building {output_exe.name}")
-
     subprocess.run(
         ["go", "build", "-o", str(output_exe), "-ldflags", ldflags, str(GO_ENTRYPOINT)],
         cwd=GO_AGENT_DIR,
@@ -80,29 +69,21 @@ def build_exe(company_slug: str, build_slug: str, config: dict) -> Path:
 
 
 async def activate_build(session: AsyncSession, build_id: int):
-    """
-    Гарантированно оставляет только одну запись с is_active=True
-    """
-
-    # снимаем active со всех
+    """Гарантированно оставляет только одну запись с is_active=True"""
     await session.execute(
         update(AgentBuild).where(AgentBuild.is_active.is_(True)).values(is_active=False)
     )
-
-    # активируем новую
     await session.execute(
         update(AgentBuild).where(AgentBuild.id == build_id).values(is_active=True)
     )
-
     await session.commit()
 
 
 # ===================== MAIN =====================
 
 
-async def build_all_agents() -> None:
+async def build_agent() -> None:
     async with AsyncSessionLocal() as session:
-
         # 1️⃣ Получаем последний билд
         result = await session.execute(select(AgentBuild).order_by(desc(AgentBuild.id)))
         last_build = result.scalars().first()
@@ -111,53 +92,27 @@ async def build_all_agents() -> None:
         new_build_slug = increment_build_slug(last_slug)
         print(f"[i] New build slug: {new_build_slug}")
 
-        # 2️⃣ Получаем компании
-        result = await session.execute(select(Company))
-        companies = result.scalars().all()
+        # 2️⃣ Строим один универсальный exe
+        exe_path = build_exe(new_build_slug)
 
-        if not companies:
-            print("[!] No companies found")
-            return
-
-        # 3️⃣ Строим exe для всех компаний
-        first_exe_path: Path | None = None
-
-        for company in companies:
-            slug = getattr(company, "slug", None) or slugify(company.name)
-
-            config = {
-                "company_id": company.id,
-                "server_url": settings.APP_HOST,
-            }
-
-            exe_path = build_exe(slug, new_build_slug, config)
-
-            if first_exe_path is None:
-                first_exe_path = exe_path
-
-        # 4️⃣ Считаем sha256 (один раз)
-        if not first_exe_path:
-            print("[!] No exe built")
-            return
-
-        sha256 = sha256_file(first_exe_path)
+        # 3️⃣ Считаем SHA256 один раз
+        sha256 = sha256_file(exe_path)
         print(f"[i] SHA256: {sha256}")
 
-        # 5️⃣ Создаём запись билда (пока не active)
+        # 4️⃣ Создаём запись билда (пока не active)
         build = AgentBuild(
             build_slug=new_build_slug,
             sha256=sha256,
             is_active=False,
         )
-
         session.add(build)
         await session.flush()  # получаем build.id без commit
 
-        # 6️⃣ Активируем билд (снимаем старый active)
+        # 5️⃣ Активируем билд (снимаем старый active)
         await activate_build(session, build.id)
 
-        print(f"[✔] All agents built for build {new_build_slug}")
+        print(f"[✔] Universal agent built: {exe_path.name}")
 
 
 if __name__ == "__main__":
-    asyncio.run(build_all_agents())
+    asyncio.run(build_agent())

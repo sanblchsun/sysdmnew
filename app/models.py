@@ -18,6 +18,8 @@ class Company(Base):
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    external_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+
     # Отношения
     departments: Mapped[list["Department"]] = relationship(
         back_populates="company",
