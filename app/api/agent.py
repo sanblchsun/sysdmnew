@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.core.auth_agent import get_agent_by_token
 from app.database import get_db
 from app.models import Agent, AgentAdditionalData, Company
@@ -16,7 +16,7 @@ from app.schemas.agent import (
     AgentRegisterOut,
     AgentTelemetryIn,
 )
-from sqlalchemy import select
+from sqlalchemy import select, update
 from app.schemas.agent_update import (
     AgentCheckUpdateIn,
     AgentCheckUpdateOut,
@@ -28,6 +28,7 @@ from app.config import settings
 
 # -------------------- TOP PANEL --------------------
 router = APIRouter(prefix="/api/agent", tags=["agent"])
+UPDATE_INTERVAL = timedelta(seconds=60)
 
 
 @router.post("/register", response_model=AgentRegisterOut)
@@ -169,10 +170,32 @@ async def agent_telemetry(
 
 @router.post("/heartbeat")
 async def agent_heartbeat(
-    uuid: str, token: str, agent: Agent = Depends(get_agent_by_token)
+    uuid: str,
+    token: str,
+    agent: Agent = Depends(get_agent_by_token),
+    session: AsyncSession = Depends(get_db),
 ):
-    # agent уже проверен и last_seen обновлён
-    return {"status": "ok", "agent_uuid": agent.uuid, "last_seen": agent.last_seen}
+    now = datetime.utcnow()
+
+    # Обновляем last_seen не чаще чем раз в UPDATE_INTERVAL секунд
+    if not agent.last_seen or now - agent.last_seen > UPDATE_INTERVAL:
+        await session.execute(
+            update(Agent).where(Agent.id == agent.id).values(last_seen=now)
+        )
+        await session.commit()
+
+        return {
+            "status": "ok",
+            "agent_uuid": agent.uuid,
+            "last_seen": now,
+        }
+
+    # Если обновление не требуется — не трогаем БД
+    return {
+        "status": "ok",
+        "agent_uuid": agent.uuid,
+        "last_seen": agent.last_seen,
+    }
 
 
 @router.post("/check-update", response_model=AgentCheckUpdateOut)

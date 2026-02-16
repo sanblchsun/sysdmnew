@@ -96,7 +96,9 @@ class Agent(Base):
 
     # Статус
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )  # индекс для heartbeat
 
     # Версия билда exe
     exe_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
