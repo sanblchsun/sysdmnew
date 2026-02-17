@@ -1,0 +1,11 @@
+{
+  "settings": {
+    "Port": 80,
+    "RedirPort": 80,
+    "BasePath": "/mesh",
+    "AllowLoginToken": true,
+    "WebRTC": true
+  }
+}
+
+

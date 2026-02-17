@@ -1,0 +1,27 @@
+# Используем Debian-based Node для стабильности
+FROM node:18-slim
+
+# Устанавливаем зависимости для сборки MeshCentral
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3 \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Создаём рабочую директорию
+WORKDIR /meshcentral
+
+# Обновляем npm и очищаем кеш
+RUN npm install -g npm@9 && npm cache clean --force
+
+# Устанавливаем MeshCentral
+RUN npm install meshcentral@latest --unsafe-perm
+
+# Порты MeshCentral (HTTP + WebRTC)
+EXPOSE 80 4443
+
+# Том для данных
+VOLUME ["/meshcentral/meshcentral-data"]
+
+# Запуск
+CMD ["node", "node_modules/meshcentral"]

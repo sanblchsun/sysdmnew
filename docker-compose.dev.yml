@@ -1,0 +1,70 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: sysdm_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # ⚠️ ПРИ ИЗМЕНЕНИИ ПАРОЛЯ ВЫПОЛНИТЕ:
+      # ⚠️ docker-compose exec db psql -U postgres -c "ALTER USER postgres WITH PASSWORD 'НОВЫЙ_ПАРОЛЬ';"
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    env_file:
+      - .env
+    networks:
+      - sysdm_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:6
+    container_name: mesh_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mesh_mongo_data:/data/db
+    networks:
+      - sysdm_network
+
+  meshcentral:
+    build:
+      context: .
+      dockerfile: Dockerfile.meshcentral
+    container_name: meshcentral
+    restart: unless-stopped
+    ports:
+      - "80:80"       # HTTP для dev
+      - "4443:4443"   # WebRTC
+    environment:
+      MONGO_URL: "mongodb://mongo:27017/meshcentral"
+      TZ: "Europe/Moscow"
+    volumes:
+      - meshcentral_data:/meshcentral/meshcentral-data
+    depends_on:
+      - mongo
+    networks:
+      - sysdm_network
+
+networks:
+  sysdm_network:
+    driver: bridge
+    name: sysdm_network
+
+volumes:
+  postgres_data:
+    driver: local
+  mesh_mongo_data:
+    driver: local
+  meshcentral_data:
+    driver: local

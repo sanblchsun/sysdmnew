@@ -26,7 +26,6 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-  #    restart: always
 
   app:
     build:
@@ -87,11 +86,47 @@ services:
     networks:
       - sysdm_network
 
+# === MeshCentral (билдим локально из официального Dockerfile) ===
+  mongo:
+    image: mongo:6
+    container_name: mesh_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mesh_mongo_data:/data/db
+    networks:
+      - sysdm_network
+
+
+  meshcentral:
+    image: ghcr.io/meshcentral/meshcentral:latest
+    container_name: meshcentral
+    restart: unless-stopped
+    ports:
+      - "4443:443"
+      - "80:80"
+      - "443:443"
+    environment:
+      MONGO_URL: "mongodb://mongo:27017/meshcentral"
+      TZ: "Europe/Moscow"
+    volumes:
+      - meshcentral_data:/meshcentral/meshcentral-data
+    depends_on:
+      - mongo
+    networks:
+      - sysdm_network
+
+
 networks:
   sysdm_network:
     driver: bridge
     name: sysdm_network
 
 volumes:
+  mesh_mongo_data:
+    driver: local
+  meshcentral_data:
+    driver: local
   postgres_data:
     driver: local

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     LOG_DIR: str
     UPLOAD_DIR: str
 
+    # -----------MeshCentral----------
+    MESH_URL: str
+    MESH_API_KEY: str
+
     @property
     def DATABASE_URL(self):
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:5432/{self.DB_NAME}"
