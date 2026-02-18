@@ -44,17 +44,17 @@ services:
     container_name: meshcentral
     restart: unless-stopped
     ports:
-      - "80:80"       # HTTP для dev
-      - "4443:4443"   # WebRTC
+      - "8080:8080"
     environment:
       MONGO_URL: "mongodb://mongo:27017/meshcentral"
       TZ: "Europe/Moscow"
     volumes:
-      - meshcentral_data:/meshcentral/meshcentral-data
+      - ./meshcentral/meshcentral-data:/meshcentral/meshcentral-data
     depends_on:
       - mongo
     networks:
       - sysdm_network
+
 
 networks:
   sysdm_network:

@@ -1,11 +1,10 @@
 {
   "settings": {
-    "Port": 80,
-    "RedirPort": 80,
-    "BasePath": "/mesh",
-    "AllowLoginToken": true,
-    "WebRTC": true
+    "Port": 8080,
+    "RedirPort": 0,
+    "BasePath": "/",
+    "TlsOffload": true,
+    "WebRTC": true,
+    "AllowLoginToken": true
   }
 }
-
-

@@ -1,3 +1,5 @@
+meshcentral/meshcentral-data/*.key
+meshcentral/meshcentral-data/*.crt
 # Python
 builder/dist/agents/
 migrations/versions/
