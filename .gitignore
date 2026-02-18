@@ -1,5 +1,6 @@
-meshcentral/meshcentral-data/*.key
-meshcentral/meshcentral-data/*.crt
+meshcentral/meshcentral-data/signedagents/
+meshcentral/meshcentral-data/
+!./meshcentral/meshcentral-data/config.json
 # Python
 builder/dist/agents/
 migrations/versions/
