@@ -1,3 +1,4 @@
+# docker-compose.yml
 version: "3.8"
 
 services:
@@ -25,36 +26,54 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+  #    restart: always
 
-  mongo:
-    image: mongo:6
-    container_name: mesh_mongo
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - mesh_mongo_data:/data/db
-    networks:
-      - sysdm_network
-
-  meshcentral:
+  app:
     build:
       context: .
-      dockerfile: Dockerfile.meshcentral
-    container_name: meshcentral
-    restart: unless-stopped
+      dockerfile: Dockerfile
+    container_name: sysdm_api
     ports:
-      - "80:80"
-      - "443:443"
+      - "${APP_PORT}:${APP_PORT}"
     environment:
-      MONGO_URL: "mongodb://mongo:27017/meshcentral"
-      TZ: "Europe/Moscow"
-    volumes:
-      - ./meshcentral/meshcentral-data:/meshcentral/meshcentral-data
+      # Основные настройки
+      APP_HOST: ${APP_HOST}
+      APP_PORT: ${APP_PORT}
+      DEBUG: ${DEBUG}
+      DATABASE_URL: ${DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      # Дополнительные переменные
+      TZ: ${TZ:-Europe/Moscow}
     depends_on:
-      - mongo
+      db:
+        condition: service_healthy
+    volumes:
+      # Монтируем исходный код для разработки
+      - .:/app
+    env_file:
+      - .env
     networks:
       - sysdm_network
+    restart: unless-stopped
+    #    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sysdm.rule=Host(`sysdm.local`)"
+      - "traefik.http.services.sysdm.loadbalancer.server.port=8000"
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./app/static:/app/static:ro
+    networks:
+      - sysdm_network
+    restart: unless-stopped
 
 
 networks:
@@ -64,8 +83,4 @@ networks:
 
 volumes:
   postgres_data:
-    driver: local
-  mesh_mongo_data:
-    driver: local
-  meshcentral_data:
     driver: local

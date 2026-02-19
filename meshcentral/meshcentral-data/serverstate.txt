@@ -1,9 +1,0 @@
-time=1771447328725
-state=running
-server-pid=30
-server-parent-pid=1
-redirect-port=80
-mps-port=4433
-mps-name=sun-PC
-https-port=443
-https-aliasport=443

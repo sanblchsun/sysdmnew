@@ -10,6 +10,7 @@
     "redirPort": 80,
     "redirAliasPort": 80
   },
+
   "domains": {
     "": {
       "title": "MyServer",
@@ -19,6 +20,7 @@
       "userNameIsEmail": true
     }
   },
+  
   "letsencrypt": {
     "email": "myemail@mydomain.com",
     "names": "sun-PC",
