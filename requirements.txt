@@ -24,4 +24,5 @@ httpx==0.28.1
 loguru
 websockets==16.0
 
-requests
+# MeshCentral
+meshctrl
