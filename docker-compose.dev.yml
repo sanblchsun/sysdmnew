@@ -1,4 +1,4 @@
-# docker-compose.yml
+# docker-compose.dev.yml
 version: "3.8"
 
 services:
@@ -31,7 +31,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: sysdm_api
     ports:
       - "${APP_PORT}:${APP_PORT}"
@@ -40,7 +40,6 @@ services:
       APP_HOST: ${APP_HOST}
       APP_PORT: ${APP_PORT}
       DEBUG: ${DEBUG}
-      DATABASE_URL: ${DATABASE_URL}
       SECRET_KEY: ${SECRET_KEY}
       # Дополнительные переменные
       TZ: ${TZ:-Europe/Moscow}
@@ -75,6 +74,37 @@ services:
       - sysdm_network
     restart: unless-stopped
 
+# === MeshCentral (билдим локально из официального Dockerfile) ===
+  mongo:
+    image: mongo:6
+    container_name: mesh_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mesh_mongo_data:/data/db
+    networks:
+      - sysdm_network
+
+
+  meshcentral:
+    build:
+      context: .
+      dockerfile: Dockerfile.meshcentral
+    container_name: meshcentral
+    restart: unless-stopped
+    ports:
+      - "4443:443"
+    environment:
+      MONGO_URL: "mongodb://mongo:27017/meshcentral"
+      TZ: "Europe/Moscow"
+    volumes:
+      - ./meshcentral/meshcentral-data:/meshcentral/meshcentral-data
+    depends_on:
+      - mongo
+    networks:
+      - sysdm_network
+
 
 networks:
   sysdm_network:
@@ -82,5 +112,9 @@ networks:
     name: sysdm_network
 
 volumes:
+  mesh_mongo_data:
+    driver: local
+  meshcentral_data:
+    driver: local
   postgres_data:
     driver: local

@@ -30,7 +30,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.prod
     container_name: sysdm_api
     ports:
       - "${APP_PORT}:${APP_PORT}"

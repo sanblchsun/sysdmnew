@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # -----------MeshCentral----------
     MESH_URL: str
-    MESH_API_KEY: str
+    MESH_API_KEY = "~t:8IxcApPYUh7yACQe"
 
     @property
     def DATABASE_URL(self):

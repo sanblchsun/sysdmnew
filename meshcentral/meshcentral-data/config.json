@@ -1,14 +1,11 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
-  "settings": {
-    "cert": "sun-PC",
-    "WANonly": true,
-    "LANonly": true,
-    "sessionKey": "MyReallySecretPassword1",
+    "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
+    "settings": {
+    "cert": "localhost",
+    "WANonly": false,
+    "LANonly": false,
     "port": 443,
-    "aliasPort": 443,
-    "redirPort": 80,
-    "redirAliasPort": 80
+    "redirPort": 80
   },
 
   "domains": {
