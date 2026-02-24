@@ -22,7 +22,9 @@ python-multipart==0.0.21
 jinja2==3.1.6
 httpx==0.28.1
 loguru
-websockets==16.0
 
 # MeshCentral
-meshctrl
+websockets==12.0
+pycryptodome==3.19.1
+python-dotenv==1.0.0
+certifi==2024.2.2

@@ -2,8 +2,6 @@
     "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
     "settings": {
     "cert": "localhost",
-    "WANonly": false,
-    "LANonly": false,
     "port": 443,
     "redirPort": 80
   },
@@ -16,12 +14,5 @@
       "newAccounts": true,
       "userNameIsEmail": true
     }
-  },
-  
-  "letsencrypt": {
-    "email": "myemail@mydomain.com",
-    "names": "sun-PC",
-    "skipChallengeVerification": true,
-    "production": false
   }
 }
