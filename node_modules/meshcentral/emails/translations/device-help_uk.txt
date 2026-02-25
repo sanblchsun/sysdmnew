@@ -1,0 +1,7 @@
+[[[SERVERNAME]]] - Запит Допомоги Пристрою
+Пристрій "[[[DEVICENAME]]]" запросив допомогу.
+
+Користувач: "[[[HELPUSERNAME]]]"
+Запит: "[[[HELP REQUEST]]]"
+
+[[[SERVERURL]]]?viewmode=10&gotonode=[[[NODEID]]]
