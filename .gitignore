@@ -3,7 +3,6 @@ meshcentral/meshcentral-data/
 # Python
 builder/dist/agents/
 migrations/versions/
-test/
 certbot/
 cookies.txt
 __pycache__/
