@@ -1,67 +1,41 @@
 # test/main.py
+import base64
+import json
+import asyncio
+import websockets
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 
-from test.config import settings
-from test.routers import mesh
-from loguru import logger
-import sys
+app = FastAPI()
 
-
-# Настройка логирования
-logger.remove()
-logger.add(
-    sys.stdout,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
-    level="DEBUG" if settings.DEBUG else "INFO",
-)
+# MeshCentral settings
+MESH_SITE = "wss://localhost:4443"
+MESH_USERNAME = "~t:hNSMfDXgLacVjASX"
+MESH_PASSWORD = "yw3lkiNd8Q1E7GDWvrnG"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Стартап
-    logger.info("🚀 Запуск MeshCentral FastAPI приложения")
-    logger.info(f"Режим отладки: {settings.DEBUG}")
-    logger.info(f"MeshCentral сервер: {settings.MESH_SITE}")
+async def send_mesh_command(command: dict):
+    # Encode username and password as base64
+    auth_header = f"{base64.b64encode(MESH_USERNAME.encode()).decode()},{base64.b64encode(MESH_PASSWORD.encode()).decode()}"
+    headers = [("x-meshauth", auth_header)]
 
-    yield
+    # Disable SSL verification for self-signed cert
+    import ssl
 
-    # Шутдаун
-    logger.info("👋 Остановка приложения")
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
 
-
-# Создание FastAPI приложения
-app = FastAPI(
-    title="MeshCentral API",
-    description="API для управления MeshCentral",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Подключаем роутер
-app.include_router(mesh.router)
+    uri = f"{MESH_SITE}/control.ashx"
+    async with websockets.connect(uri, extra_headers=headers, ssl=ssl_context) as ws:
+        await ws.send(json.dumps(command))
+        async for message in ws:
+            response = json.loads(message)
+            # Return the first response (or filter by responseid)
+            return response
 
 
-@app.get("/")
-async def root():
-    return {
-        "message": "MeshCentral API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "status": "running",
-    }
-
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
+@app.get("/mesh/test")
+async def mesh_test():
+    command = {"action": "info", "responseid": "fastapi_test"}
+    response = await send_mesh_command(command)
+    return {"mesh_response": response}
