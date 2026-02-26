@@ -8,9 +8,9 @@ from fastapi import FastAPI
 app = FastAPI()
 
 # MeshCentral settings
-MESH_SITE = "wss://localhost:4443"
-MESH_USERNAME = "~t:hNSMfDXgLacVjASX"
-MESH_PASSWORD = "yw3lkiNd8Q1E7GDWvrnG"
+MESH_SITE = "wss://localhost:443"
+MESH_USERNAME = "~t:M4cUAArHuU6hBGaz"
+MESH_PASSWORD = "4dACXjrRgIE0B8SM6jDN"
 
 
 async def send_mesh_command(command: dict):
