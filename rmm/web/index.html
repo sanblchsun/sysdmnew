@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <body>
+    <video id="video" autoplay playsinline></video>
+
+    <script>
+      const video = document.getElementById("video");
+      const pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      pc.ontrack = (event) => {
+          video.srcObject = event.streams[0];
+      };
+
+      const ws = new WebSocket("ws://localhost:8000/ws/view/agent1");
+
+      ws.onmessage = async (msg) => {
+          const data = JSON.parse(msg.data);
+          await pc.setRemoteDescription(data);
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      ws.onopen = () => {
+          ws.send(JSON.stringify(pc.localDescription));
+      };
+    </script>
+  </body>
+</html>
