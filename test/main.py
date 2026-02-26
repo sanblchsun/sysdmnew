@@ -9,8 +9,8 @@ app = FastAPI()
 
 # MeshCentral settings
 MESH_SITE = "wss://localhost:4443"
-MESH_USERNAME = "~t:hNSMfDXgLacVjASX"
-MESH_PASSWORD = "yw3lkiNd8Q1E7GDWvrnG"
+MESH_USERNAME = "~t:22voHWZ6ViWSgZ8R"
+MESH_PASSWORD = "Z14M6TpMsMjNmRIsFsEF"
 
 
 async def send_mesh_command(command: dict):

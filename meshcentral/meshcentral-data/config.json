@@ -1,22 +1,23 @@
 {
   "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
   "settings": {
-    "cert": "localhost",
-    "WANonly": true,
-    "LANonly": true,
-    "sessionKey": "MyReallySecretPassword1",
-    "port": 443,
-    "aliasPort": 443,
-    "redirPort": 80,
-    "redirAliasPort": 80
+    "MongoDb": "mongodb://mesh_mongo:27017/meshcentral",
+    "_cert": "localhost",
+    "_WANonly": true,
+    "_LANonly": true,
+    "_sessionKey": "MyReallySecretPassword1",
+    "_port": 443,
+    "_aliasPort": 443,
+    "_redirPort": 80,
+    "_redirAliasPort": 80
   },
   "domains": {
     "": {
-      "title": "MyServer",
-      "title2": "Servername",
-      "minify": true,
-      "newAccounts": true,
-      "userNameIsEmail": true
+      "_title": "MyServer",
+      "_title2": "Servername",
+      "_minify": true,
+      "_newAccounts": true,
+      "_userNameIsEmail": true
     }
   }
 }
