@@ -13,11 +13,8 @@
   },
   "domains": {
     "": {
-<<<<<<< HEAD
       "_title": "MyServer",
-=======
       "title": "MyServer1",
->>>>>>> 6195a20a189fbb1f565f3517c784043cfb8f8c34
       "_title2": "Servername",
       "_minify": true,
       "_newAccounts": true,
