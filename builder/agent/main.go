@@ -12,7 +12,7 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media"
 )
 
-const ServerURL = "ws://192.168.2.191:8000/ws/agent/agent1"
+const ServerURL = "ws://192.168.88.127:8000/ws/agent/agent1"
 
 func main() {
 	ws, _, err := websocket.DefaultDialer.Dial(ServerURL, nil)
