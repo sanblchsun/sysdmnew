@@ -21,29 +21,20 @@ func main() {
 	}
 	log.Println("Connected to signaling server:", ServerURL)
 
-	// 🔒 Канал для потокобезопасной записи
 	writeChan := make(chan []byte, 100)
-
-	// Единственный writer
 	go func() {
 		for msg := range writeChan {
-			err := ws.WriteMessage(websocket.TextMessage, msg)
-			if err != nil {
+			if err := ws.WriteMessage(websocket.TextMessage, msg); err != nil {
 				log.Println("WebSocket write error:", err)
 				return
 			}
 		}
 	}()
 
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{"stun:stun.l.google.com:19302"}},
-		},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Map of PeerConnections per viewer
+	pcs := make(map[string]*webrtc.PeerConnection)
 
+	// Single video track for all viewers
 	videoTrack, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
 		"video",
@@ -52,18 +43,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	_, err = pc.AddTrack(videoTrack)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c != nil {
-			payload, _ := json.Marshal(c.ToJSON())
-			writeChan <- payload
-		}
-	})
 
 	// --- FFmpeg ---
 	cmd := exec.Command(
@@ -78,10 +57,8 @@ func main() {
 		"-f", "h264",
 		"pipe:1",
 	)
-
 	stdout, _ := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
-
 	if err := cmd.Start(); err != nil {
 		log.Fatal("FFmpeg start error:", err)
 	}
@@ -95,7 +72,6 @@ func main() {
 				log.Println("NAL read error:", err)
 				return
 			}
-
 			err = videoTrack.WriteSample(media.Sample{
 				Data:     nal,
 				Duration: time.Second / 30,
@@ -107,7 +83,6 @@ func main() {
 		}
 	}()
 
-	// --- Signaling ---
 	for {
 		_, msg, err := ws.ReadMessage()
 		if err != nil {
@@ -115,13 +90,42 @@ func main() {
 			break
 		}
 
-		// SDP
+		// Try to decode as SDP offer
 		var sdp webrtc.SessionDescription
 		if err := json.Unmarshal(msg, &sdp); err == nil && sdp.Type == webrtc.SDPTypeOffer {
 			log.Println("Received offer")
 
-			err = pc.SetRemoteDescription(sdp)
+			viewerID := "viewer" // single viewer; can parse from message if multiple
+			// Close old PC if exists
+			if oldPC, ok := pcs[viewerID]; ok {
+				oldPC.Close()
+			}
+
+			pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+				ICEServers: []webrtc.ICEServer{
+					{URLs: []string{"stun:stun.l.google.com:19302"}},
+				},
+			})
 			if err != nil {
+				log.Println("PeerConnection error:", err)
+				continue
+			}
+			pcs[viewerID] = pc
+
+			_, err = pc.AddTrack(videoTrack)
+			if err != nil {
+				log.Println("AddTrack error:", err)
+				continue
+			}
+
+			pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+				if c != nil {
+					payload, _ := json.Marshal(c.ToJSON())
+					writeChan <- payload
+				}
+			})
+
+			if err := pc.SetRemoteDescription(sdp); err != nil {
 				log.Println("SetRemoteDescription error:", err)
 				continue
 			}
@@ -131,9 +135,7 @@ func main() {
 				log.Println("CreateAnswer error:", err)
 				continue
 			}
-
-			err = pc.SetLocalDescription(answer)
-			if err != nil {
+			if err := pc.SetLocalDescription(answer); err != nil {
 				log.Println("SetLocalDescription error:", err)
 				continue
 			}
@@ -143,13 +145,12 @@ func main() {
 			continue
 		}
 
-		// ICE
+		// ICE candidates
 		var ice map[string]interface{}
 		if err := json.Unmarshal(msg, &ice); err == nil && ice["candidate"] != nil {
 			candidate := webrtc.ICECandidateInit{
 				Candidate: ice["candidate"].(string),
 			}
-
 			if ice["sdpMid"] != nil {
 				sdpMid := ice["sdpMid"].(string)
 				candidate.SDPMid = &sdpMid
@@ -159,9 +160,11 @@ func main() {
 				candidate.SDPMLineIndex = &idx
 			}
 
-			err := pc.AddICECandidate(candidate)
-			if err != nil {
-				log.Println("AddICECandidate error:", err)
+			// Apply to all active PCs
+			for _, pc := range pcs {
+				if err := pc.AddICECandidate(candidate); err != nil {
+					log.Println("AddICECandidate error:", err)
+				}
 			}
 		}
 	}
