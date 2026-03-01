@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,12 +16,17 @@ import (
 const ServerURL = "ws://192.168.88.127:8000/ws/agent/agent1"
 
 func main() {
+	log.Println("Connecting to signaling server:", ServerURL)
+
 	ws, _, err := websocket.DefaultDialer.Dial(ServerURL, nil)
 	if err != nil {
 		log.Fatal("WebSocket connect error:", err)
 	}
-	log.Println("Connected to signaling server:", ServerURL)
+	defer ws.Close()
 
+	log.Println("Connected to signaling server")
+
+	// Thread-safe writer
 	writeChan := make(chan []byte, 100)
 	go func() {
 		for msg := range writeChan {
@@ -31,57 +37,22 @@ func main() {
 		}
 	}()
 
-	// Map of PeerConnections per viewer
+	// Map of active PeerConnections
 	pcs := make(map[string]*webrtc.PeerConnection)
+	var pcsLock sync.Mutex
 
-	// Single video track for all viewers
+	// Shared video track (sent to all viewers)
 	videoTrack, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
 		"video",
 		"rmm",
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Track creation error:", err)
 	}
 
-	// --- FFmpeg ---
-	cmd := exec.Command(
-		"C:\\ffmpeg\\bin\\ffmpeg.exe",
-		"-f", "gdigrab",
-		"-framerate", "30",
-		"-i", "desktop",
-		"-vcodec", "libx264",
-		"-preset", "ultrafast",
-		"-tune", "zerolatency",
-		"-pix_fmt", "yuv420p",
-		"-f", "h264",
-		"pipe:1",
-	)
-	stdout, _ := cmd.StdoutPipe()
-	cmd.Stderr = cmd.Stdout
-	if err := cmd.Start(); err != nil {
-		log.Fatal("FFmpeg start error:", err)
-	}
-	log.Println("FFmpeg started")
-
-	go func() {
-		reader := bufio.NewReader(stdout)
-		for {
-			nal, err := readNALUnit(reader)
-			if err != nil {
-				log.Println("NAL read error:", err)
-				return
-			}
-			err = videoTrack.WriteSample(media.Sample{
-				Data:     nal,
-				Duration: time.Second / 30,
-			})
-			if err != nil {
-				log.Println("WriteSample error:", err)
-				return
-			}
-		}
-	}()
+	// Start FFmpeg streaming loop
+	go startFFmpeg(videoTrack)
 
 	for {
 		_, msg, err := ws.ReadMessage()
@@ -90,14 +61,16 @@ func main() {
 			break
 		}
 
-		// Try to decode as SDP offer
+		// Try to parse as SDP
 		var sdp webrtc.SessionDescription
 		if err := json.Unmarshal(msg, &sdp); err == nil && sdp.Type == webrtc.SDPTypeOffer {
-			log.Println("Received offer")
+			log.Println("Received new offer (viewer refresh or connect)")
 
-			viewerID := "viewer" // single viewer; can parse from message if multiple
-			// Close old PC if exists
+			viewerID := "viewer" // single viewer system
+
+			pcsLock.Lock()
 			if oldPC, ok := pcs[viewerID]; ok {
+				log.Println("Closing old PeerConnection")
 				oldPC.Close()
 			}
 
@@ -108,9 +81,12 @@ func main() {
 			})
 			if err != nil {
 				log.Println("PeerConnection error:", err)
+				pcsLock.Unlock()
 				continue
 			}
+
 			pcs[viewerID] = pc
+			pcsLock.Unlock()
 
 			_, err = pc.AddTrack(videoTrack)
 			if err != nil {
@@ -135,6 +111,7 @@ func main() {
 				log.Println("CreateAnswer error:", err)
 				continue
 			}
+
 			if err := pc.SetLocalDescription(answer); err != nil {
 				log.Println("SetLocalDescription error:", err)
 				continue
@@ -142,15 +119,19 @@ func main() {
 
 			payload, _ := json.Marshal(answer)
 			writeChan <- payload
+
+			log.Println("Sent SDP answer")
 			continue
 		}
 
-		// ICE candidates
+		// Try to parse as ICE
 		var ice map[string]interface{}
 		if err := json.Unmarshal(msg, &ice); err == nil && ice["candidate"] != nil {
+
 			candidate := webrtc.ICECandidateInit{
 				Candidate: ice["candidate"].(string),
 			}
+
 			if ice["sdpMid"] != nil {
 				sdpMid := ice["sdpMid"].(string)
 				candidate.SDPMid = &sdpMid
@@ -160,13 +141,90 @@ func main() {
 				candidate.SDPMLineIndex = &idx
 			}
 
-			// Apply to all active PCs
+			pcsLock.Lock()
 			for _, pc := range pcs {
 				if err := pc.AddICECandidate(candidate); err != nil {
 					log.Println("AddICECandidate error:", err)
 				}
 			}
+			pcsLock.Unlock()
 		}
+	}
+
+	log.Println("Agent shutting down")
+}
+
+func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
+	for {
+		log.Println("Starting FFmpeg...")
+
+		cmd := exec.Command(
+			"C:\\ffmpeg\\bin\\ffmpeg.exe",
+			"-loglevel", "warning",
+			"-f", "gdigrab",
+			"-framerate", "30",
+			"-i", "desktop",
+			"-vcodec", "libx264",
+			"-preset", "ultrafast",
+			"-tune", "zerolatency",
+			"-pix_fmt", "yuv420p",
+			"-f", "h264",
+			"pipe:1",
+		)
+
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			log.Println("FFmpeg stdout error:", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			log.Println("FFmpeg stderr error:", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		if err := cmd.Start(); err != nil {
+			log.Println("FFmpeg start error:", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		log.Println("FFmpeg started (PID:", cmd.Process.Pid, ")")
+
+		// Log FFmpeg stderr
+		go func() {
+			scanner := bufio.NewScanner(stderr)
+			for scanner.Scan() {
+				log.Println("[FFmpeg]", scanner.Text())
+			}
+		}()
+
+		reader := bufio.NewReader(stdout)
+
+		for {
+			nal, err := readNALUnit(reader)
+			if err != nil {
+				log.Println("NAL read error:", err)
+				break
+			}
+
+			err = videoTrack.WriteSample(media.Sample{
+				Data:     nal,
+				Duration: time.Second / 30,
+			})
+			if err != nil {
+				log.Println("WriteSample error:", err)
+				break
+			}
+		}
+
+		log.Println("FFmpeg exited. Restarting in 3 seconds...")
+		cmd.Process.Kill()
+		cmd.Wait()
+		time.Sleep(3 * time.Second)
 	}
 }
 
