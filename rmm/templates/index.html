@@ -75,21 +75,41 @@
 
       const video = document.getElementById("video");
 
+      let lastMouseMoveTime = 0;
       video.addEventListener("mousemove", (e) => {
+        const now = Date.now();
+        if (now - lastMouseMoveTime < 10) {
+          return;
+        }
+        lastMouseMoveTime = now;
+
         if (!dc || dc.readyState !== "open") return;
 
         const rect = video.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        const scaledX = (x / rect.width) * remoteScreenWidth;
-        const scaledY = (y / rect.height) * remoteScreenHeight;
+        const aspectRatio = remoteScreenWidth / remoteScreenHeight;
+        const videoAspectRatio = rect.width / rect.height;
+
+        let scaledX, scaledY;
+        if (aspectRatio > videoAspectRatio) {
+          const height = rect.width / aspectRatio;
+          scaledX = (x / rect.width) * remoteScreenWidth;
+          scaledY =
+            ((y - (rect.height - height) / 2) / height) * remoteScreenHeight;
+        } else {
+          const width = rect.height * aspectRatio;
+          scaledX =
+            ((x - (rect.width - width) / 2) / width) * remoteScreenWidth;
+          scaledY = (y / rect.height) * remoteScreenHeight;
+        }
 
         dc.send(
           JSON.stringify({
             type: "mouse_move",
-            x: scaledX,
-            y: scaledY,
+            x: Math.round(scaledX),
+            y: Math.round(scaledY),
           }),
         );
       });
