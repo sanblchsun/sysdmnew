@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"log"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-vgo/robotgo"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media"
 )
 
-const ServerURL = "ws://192.168.88.127:8000/ws/agent/agent1"
+const ServerURL = "ws://192.168.2.191:8000/ws/agent/agent1"
 
 func main() {
 	log.Println("Connecting to signaling server:", ServerURL)
@@ -26,22 +28,16 @@ func main() {
 
 	log.Println("Connected to signaling server")
 
-	// Thread-safe writer
 	writeChan := make(chan []byte, 100)
 	go func() {
 		for msg := range writeChan {
-			if err := ws.WriteMessage(websocket.TextMessage, msg); err != nil {
-				log.Println("WebSocket write error:", err)
-				return
-			}
+			ws.WriteMessage(websocket.TextMessage, msg)
 		}
 	}()
 
-	// Map of active PeerConnections
 	pcs := make(map[string]*webrtc.PeerConnection)
 	var pcsLock sync.Mutex
 
-	// Shared video track (sent to all viewers)
 	videoTrack, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
 		"video",
@@ -51,7 +47,6 @@ func main() {
 		log.Fatal("Track creation error:", err)
 	}
 
-	// Start FFmpeg streaming loop
 	go startFFmpeg(videoTrack)
 
 	for {
@@ -61,16 +56,13 @@ func main() {
 			break
 		}
 
-		// Try to parse as SDP
 		var sdp webrtc.SessionDescription
 		if err := json.Unmarshal(msg, &sdp); err == nil && sdp.Type == webrtc.SDPTypeOffer {
-			log.Println("Received new offer (viewer refresh or connect)")
 
-			viewerID := "viewer" // single viewer system
+			viewerID := "viewer"
 
 			pcsLock.Lock()
 			if oldPC, ok := pcs[viewerID]; ok {
-				log.Println("Closing old PeerConnection")
 				oldPC.Close()
 			}
 
@@ -80,7 +72,6 @@ func main() {
 				},
 			})
 			if err != nil {
-				log.Println("PeerConnection error:", err)
 				pcsLock.Unlock()
 				continue
 			}
@@ -90,9 +81,30 @@ func main() {
 
 			_, err = pc.AddTrack(videoTrack)
 			if err != nil {
-				log.Println("AddTrack error:", err)
 				continue
 			}
+
+			pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+
+				dc.OnOpen(func() {
+					log.Println("Control channel open")
+
+					w, h := robotgo.GetScreenSize()
+
+					info := map[string]interface{}{
+						"type":   "screen_info",
+						"width":  w,
+						"height": h,
+					}
+
+					payload, _ := json.Marshal(info)
+					dc.Send(payload)
+				})
+
+				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+					handleControl(msg.Data)
+				})
+			})
 
 			pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 				if c != nil {
@@ -101,30 +113,14 @@ func main() {
 				}
 			})
 
-			if err := pc.SetRemoteDescription(sdp); err != nil {
-				log.Println("SetRemoteDescription error:", err)
-				continue
-			}
-
-			answer, err := pc.CreateAnswer(nil)
-			if err != nil {
-				log.Println("CreateAnswer error:", err)
-				continue
-			}
-
-			if err := pc.SetLocalDescription(answer); err != nil {
-				log.Println("SetLocalDescription error:", err)
-				continue
-			}
+			pc.SetRemoteDescription(sdp)
+			answer, _ := pc.CreateAnswer(nil)
+			pc.SetLocalDescription(answer)
 
 			payload, _ := json.Marshal(answer)
 			writeChan <- payload
-
-			log.Println("Sent SDP answer")
-			continue
 		}
 
-		// Try to parse as ICE
 		var ice map[string]interface{}
 		if err := json.Unmarshal(msg, &ice); err == nil && ice["candidate"] != nil {
 
@@ -132,112 +128,188 @@ func main() {
 				Candidate: ice["candidate"].(string),
 			}
 
-			if ice["sdpMid"] != nil {
-				sdpMid := ice["sdpMid"].(string)
-				candidate.SDPMid = &sdpMid
-			}
-			if ice["sdpMLineIndex"] != nil {
-				idx := uint16(ice["sdpMLineIndex"].(float64))
-				candidate.SDPMLineIndex = &idx
-			}
-
 			pcsLock.Lock()
 			for _, pc := range pcs {
-				if err := pc.AddICECandidate(candidate); err != nil {
-					log.Println("AddICECandidate error:", err)
-				}
+				pc.AddICECandidate(candidate)
 			}
 			pcsLock.Unlock()
 		}
 	}
-
-	log.Println("Agent shutting down")
 }
 
 func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
+	log.Println("Starting FFmpeg...")
+
+	cmd := exec.Command(
+		"C:\\ffmpeg\\bin\\ffmpeg.exe",
+		"-f", "gdigrab",
+		"-framerate", "30",
+		"-draw_mouse", "0",
+		"-i", "desktop",
+		"-vcodec", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "zerolatency",
+		"-pix_fmt", "yuv420p",
+		"-g", "30",
+		"-keyint_min", "30",
+		"-f", "h264",
+		"-",
+	)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Fatal("FFmpeg stdout error:", err)
+	}
+
+	stderr, _ := cmd.StderrPipe()
+
+	if err := cmd.Start(); err != nil {
+		log.Fatal("Failed to start FFmpeg:", err)
+	}
+
+	log.Println("FFmpeg started (PID:", cmd.Process.Pid, ")")
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			log.Println("[FFmpeg]", scanner.Text())
+		}
+	}()
+
+	reader := bufio.NewReader(stdout)
+
+	var buffer []byte
+	tmp := make([]byte, 4096)
+
 	for {
-		log.Println("Starting FFmpeg...")
-
-		cmd := exec.Command(
-			"C:\\ffmpeg\\bin\\ffmpeg.exe",
-			"-loglevel", "warning",
-			"-f", "gdigrab",
-			"-framerate", "30",
-			"-i", "desktop",
-			"-vcodec", "libx264",
-			"-preset", "ultrafast",
-			"-tune", "zerolatency",
-			"-pix_fmt", "yuv420p",
-			"-f", "h264",
-			"pipe:1",
-		)
-
-		stdout, err := cmd.StdoutPipe()
+		n, err := reader.Read(tmp)
 		if err != nil {
-			log.Println("FFmpeg stdout error:", err)
-			time.Sleep(3 * time.Second)
-			continue
+			log.Println("FFmpeg read error:", err)
+			break
 		}
 
-		stderr, err := cmd.StderrPipe()
-		if err != nil {
-			log.Println("FFmpeg stderr error:", err)
-			time.Sleep(3 * time.Second)
-			continue
-		}
-
-		if err := cmd.Start(); err != nil {
-			log.Println("FFmpeg start error:", err)
-			time.Sleep(3 * time.Second)
-			continue
-		}
-
-		log.Println("FFmpeg started (PID:", cmd.Process.Pid, ")")
-
-		// Log FFmpeg stderr
-		go func() {
-			scanner := bufio.NewScanner(stderr)
-			for scanner.Scan() {
-				log.Println("[FFmpeg]", scanner.Text())
-			}
-		}()
-
-		reader := bufio.NewReader(stdout)
+		buffer = append(buffer, tmp[:n]...)
 
 		for {
-			nal, err := readNALUnit(reader)
-			if err != nil {
-				log.Println("NAL read error:", err)
+			start := findStartCode(buffer)
+			if start == -1 {
 				break
 			}
 
+			next := findStartCode(buffer[start+4:])
+			if next == -1 {
+				break
+			}
+
+			next += start + 4
+
+			nalu := buffer[start:next]
+
 			err = videoTrack.WriteSample(media.Sample{
-				Data:     nal,
+				Data:     nalu,
 				Duration: time.Second / 30,
 			})
 			if err != nil {
-				log.Println("WriteSample error:", err)
-				break
+				log.Println("Track write error:", err)
+				return
 			}
-		}
 
-		log.Println("FFmpeg exited. Restarting in 3 seconds...")
-		cmd.Process.Kill()
-		cmd.Wait()
-		time.Sleep(3 * time.Second)
+			buffer = buffer[next:]
+		}
 	}
 }
 
-func readNALUnit(r *bufio.Reader) ([]byte, error) {
-	var nal []byte
-	for {
-		b, err := r.ReadByte()
-		if err != nil {
-			return nil, err
+func findStartCode(data []byte) int {
+	for i := 0; i < len(data)-3; i++ {
+		if data[i] == 0x00 &&
+			data[i+1] == 0x00 &&
+			data[i+2] == 0x00 &&
+			data[i+3] == 0x01 {
+			return i
 		}
-		nal = append(nal, b)
-		if len(nal) >= 4 && string(nal[len(nal)-4:]) == "\x00\x00\x00\x01" {
-			return nal[:len(nal)-4], nil
+	}
+	return -1
+}
+
+func handleControl(data []byte) {
+	var control map[string]interface{}
+	if err := json.Unmarshal(data, &control); err != nil {
+		return
+	}
+
+	switch control["type"] {
+
+	case "mouse_move":
+		x := int(control["x"].(float64))
+		y := int(control["y"].(float64))
+		robotgo.Move(x, y)
+
+	case "mouse_down":
+		switch int(control["button"].(float64)) {
+		case 0:
+			robotgo.MouseDown("left")
+		case 1:
+			robotgo.MouseDown("center")
+		case 2:
+			robotgo.MouseDown("right")
 		}
+
+	case "mouse_up":
+		switch int(control["button"].(float64)) {
+		case 0:
+			robotgo.MouseUp("left")
+		case 1:
+			robotgo.MouseUp("center")
+		case 2:
+			robotgo.MouseUp("right")
+		}
+
+	case "key_down":
+		key := mapKey(control["key"].(string))
+		if key != "" {
+			robotgo.KeyDown(key)
+		}
+
+	case "key_up":
+		key := mapKey(control["key"].(string))
+		if key != "" {
+			robotgo.KeyUp(key)
+		}
+	}
+}
+
+func mapKey(code string) string {
+
+	if strings.HasPrefix(code, "Key") {
+		return strings.ToLower(code[3:])
+	}
+
+	if strings.HasPrefix(code, "Digit") {
+		return code[5:]
+	}
+
+	switch code {
+	case "Space":
+		return "space"
+	case "Enter":
+		return "enter"
+	case "Escape":
+		return "esc"
+	case "ShiftLeft", "ShiftRight":
+		return "shift"
+	case "ControlLeft", "ControlRight":
+		return "ctrl"
+	case "AltLeft", "AltRight":
+		return "alt"
+	case "ArrowLeft":
+		return "left"
+	case "ArrowRight":
+		return "right"
+	case "ArrowUp":
+		return "up"
+	case "ArrowDown":
+		return "down"
+	default:
+		return ""
 	}
 }

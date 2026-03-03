@@ -1,3 +1,4 @@
+<!-- rmm/templates/index.html -->
 <!doctype html>
 <html>
   <head>
@@ -5,7 +6,6 @@
     <title>RMM Viewer</title>
   </head>
   <body>
-    <h2>Удалённый агент: agent1</h2>
     <video
       id="video"
       autoplay
@@ -17,31 +17,33 @@
     <script>
       let pc = null;
       let ws = null;
+      let dc = null;
+
+      let remoteScreenWidth = 1920;
+      let remoteScreenHeight = 1080;
 
       function connect() {
-        if (ws) {
-          ws.close();
-        }
-
         const wsUrl =
           "ws://" + window.location.hostname + ":8000/ws/viewer/agent1";
-        console.log("Connecting to signaling server:", wsUrl);
 
         ws = new WebSocket(wsUrl);
 
         ws.onopen = async () => {
-          console.log("WebSocket open");
-
-          if (pc) {
-            pc.close();
-          }
-
           pc = new RTCPeerConnection({
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
           });
 
+          dc = pc.createDataChannel("control");
+
+          dc.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "screen_info") {
+              remoteScreenWidth = data.width;
+              remoteScreenHeight = data.height;
+            }
+          };
+
           pc.ontrack = (event) => {
-            console.log("Received track");
             document.getElementById("video").srcObject = event.streams[0];
           };
 
@@ -62,26 +64,71 @@
           const data = JSON.parse(msg.data);
 
           if (data.type === "answer") {
-            console.log("Received SDP answer");
             await pc.setRemoteDescription(new RTCSessionDescription(data));
           } else if (data.candidate) {
-            console.log("Received ICE candidate");
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(data));
-            } catch (e) {
-              console.warn("Error adding ICE candidate:", e);
-            }
+            await pc.addIceCandidate(new RTCIceCandidate(data));
           }
-        };
-
-        ws.onclose = () => {
-          console.log("WebSocket closed, reconnecting...");
-          document.getElementById("video").srcObject = null; // reset
-          setTimeout(connect, 1000);
         };
       }
 
       connect();
+
+      const video = document.getElementById("video");
+
+      video.addEventListener("mousemove", (e) => {
+        if (!dc || dc.readyState !== "open") return;
+
+        const rect = video.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const scaledX = (x / rect.width) * remoteScreenWidth;
+        const scaledY = (y / rect.height) * remoteScreenHeight;
+
+        dc.send(
+          JSON.stringify({
+            type: "mouse_move",
+            x: scaledX,
+            y: scaledY,
+          }),
+        );
+      });
+
+      video.addEventListener("mousedown", (e) => {
+        dc.send(
+          JSON.stringify({
+            type: "mouse_down",
+            button: e.button,
+          }),
+        );
+      });
+
+      video.addEventListener("mouseup", (e) => {
+        dc.send(
+          JSON.stringify({
+            type: "mouse_up",
+            button: e.button,
+          }),
+        );
+      });
+
+      window.addEventListener("keydown", (e) => {
+        dc.send(
+          JSON.stringify({
+            type: "key_down",
+            key: e.code,
+          }),
+        );
+      });
+
+      window.addEventListener("keyup", (e) => {
+        dc.send(
+          JSON.stringify({
+            type: "key_up",
+            key: e.code,
+          }),
+        );
+      });
     </script>
   </body>
 </html>
