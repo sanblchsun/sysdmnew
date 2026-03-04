@@ -7,11 +7,14 @@
       body {
         margin: 0;
         background: #111;
+        overflow: hidden;
       }
       video {
         width: 100%;
-        height: auto;
+        height: 100vh;
         display: block;
+        object-fit: contain;
+        background-color: black;
       }
     </style>
   </head>
@@ -24,16 +27,20 @@
       let remoteScreenWidth = 1920;
       let remoteScreenHeight = 1080;
 
+      // --- Connection initialization ---
       async function connect() {
         const wsUrl =
           "ws://" + window.location.hostname + ":8000/ws/viewer/agent1";
         ws = new WebSocket(wsUrl);
 
         ws.onopen = async () => {
+          console.log("Connected to signaling server");
+
           pc = new RTCPeerConnection({
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
           });
 
+          // Create data channel for control input
           dc = pc.createDataChannel("control");
           setupDataChannel(dc);
           setupConnection(pc);
@@ -43,6 +50,7 @@
           ws.send(JSON.stringify(offer));
         };
 
+        // Handle signaling messages (answer + ICE candidates)
         ws.onmessage = async (msg) => {
           const data = JSON.parse(msg.data);
           if (data.type === "answer") {
@@ -50,6 +58,11 @@
           } else if (data.candidate) {
             await pc.addIceCandidate(data);
           }
+        };
+
+        ws.onclose = () => {
+          console.warn("Disconnected, retrying in 2s...");
+          setTimeout(connect, 2000);
         };
       }
 
@@ -59,6 +72,11 @@
           if (data.type === "screen_info") {
             remoteScreenWidth = data.width;
             remoteScreenHeight = data.height;
+            console.log(
+              "Remote screen:",
+              remoteScreenWidth,
+              remoteScreenHeight,
+            );
           }
         };
       }
@@ -72,25 +90,25 @@
           if (event.candidate) ws.send(JSON.stringify(event.candidate));
         };
 
+        // Only receiving video
         pc.addTransceiver("video", { direction: "recvonly" });
       }
 
+      // --- Control event handling ---
       connect();
-
       const video = document.getElementById("video");
-      let lastMouseMoveTime = 0;
+      let lastMouseMove = 0;
 
       video.addEventListener("mousemove", (e) => {
         const now = Date.now();
-        if (now - lastMouseMoveTime < 10) return;
-        lastMouseMoveTime = now;
+        if (now - lastMouseMove < 16) return; // Limit to ~60Hz
+        lastMouseMove = now;
 
         if (!dc || dc.readyState !== "open") return;
 
         const rect = video.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-
         const aspectRatio = remoteScreenWidth / remoteScreenHeight;
         const videoAspectRatio = rect.width / rect.height;
 

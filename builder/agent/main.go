@@ -1,3 +1,4 @@
+// builder/agent/main.go
 package main
 
 import (
@@ -17,9 +18,11 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media"
 )
 
+// --- Configuration constants ---
 const serverURL = "ws://192.168.2.191:8000/ws/agent/agent1"
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Printf("Connecting to signaling server: %s\n", serverURL)
 
 	ws, _, err := websocket.DefaultDialer.Dial(serverURL, nil)
@@ -27,7 +30,6 @@ func main() {
 		log.Fatalf("WebSocket connect error: %v", err)
 	}
 	defer ws.Close()
-
 	log.Println("Connected to signaling server")
 
 	writeChan := make(chan []byte, 100)
@@ -42,9 +44,10 @@ func main() {
 
 	videoTrack, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
-		"video", "rmm")
+		"video", "rmm",
+	)
 	if err != nil {
-		log.Fatalf("Track creation error: %v", err)
+		log.Fatalf("Failed creating track: %v", err)
 	}
 
 	go startFFmpeg(videoTrack)
@@ -55,7 +58,6 @@ func main() {
 			log.Printf("WebSocket read error: %v", err)
 			break
 		}
-
 		if handleSDP(msg, writeChan, pcs, &pcsLock, videoTrack) {
 			continue
 		}
@@ -63,39 +65,61 @@ func main() {
 	}
 }
 
-func handleSDP(msg []byte, writeChan chan []byte, pcs map[string]*webrtc.PeerConnection, pcsLock *sync.Mutex, videoTrack *webrtc.TrackLocalStaticSample) bool {
+// --- SDP and ICE handling ---
+
+func handleSDP(msg []byte, out chan []byte, pcs map[string]*webrtc.PeerConnection, lock *sync.Mutex, videoTrack *webrtc.TrackLocalStaticSample) bool {
 	var sdp webrtc.SessionDescription
 	if err := json.Unmarshal(msg, &sdp); err != nil || sdp.Type != webrtc.SDPTypeOffer {
 		return false
 	}
 
-	pcsLock.Lock()
+	lock.Lock()
 	if old, ok := pcs["viewer"]; ok {
 		old.Close()
 	}
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{"stun:stun.l.google.com:19302"}},
-		},
-	})
+	pc, err := newPeerConnection(out, videoTrack)
 	if err != nil {
-		pcsLock.Unlock()
+		lock.Unlock()
 		log.Printf("PeerConnection error: %v", err)
 		return true
 	}
-
 	pcs["viewer"] = pc
-	pcsLock.Unlock()
+	lock.Unlock()
 
-	_, err = pc.AddTrack(videoTrack)
-	if err != nil {
-		log.Printf("AddTrack error: %v", err)
+	if err := pc.SetRemoteDescription(sdp); err != nil {
+		log.Printf("SetRemoteDescription error: %v", err)
 		return true
+	}
+
+	answer, err := pc.CreateAnswer(nil)
+	if err != nil {
+		log.Printf("CreateAnswer error: %v", err)
+		return true
+	}
+	if err := pc.SetLocalDescription(answer); err != nil {
+		log.Printf("SetLocalDescription error: %v", err)
+		return true
+	}
+	payload, _ := json.Marshal(answer)
+	out <- payload
+	return true
+}
+
+func newPeerConnection(out chan []byte, videoTrack *webrtc.TrackLocalStaticSample) (*webrtc.PeerConnection, error) {
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := pc.AddTrack(videoTrack); err != nil {
+		log.Printf("AddTrack error: %v", err)
 	}
 
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		dc.OnOpen(func() {
-			log.Println("Control channel open")
+			log.Println("Control channel opened")
 			sendScreenInfo(dc)
 		})
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
@@ -106,51 +130,41 @@ func handleSDP(msg []byte, writeChan chan []byte, pcs map[string]*webrtc.PeerCon
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c != nil {
 			if payload, err := json.Marshal(c.ToJSON()); err == nil {
-				writeChan <- payload
+				out <- payload
 			}
 		}
 	})
-
-	if err = pc.SetRemoteDescription(sdp); err != nil {
-		log.Printf("SetRemoteDescription error: %v", err)
-		return true
-	}
-
-	answer, err := pc.CreateAnswer(nil)
-	if err != nil {
-		log.Printf("CreateAnswer error: %v", err)
-		return true
-	}
-	pc.SetLocalDescription(answer)
-	payload, _ := json.Marshal(answer)
-	writeChan <- payload
-	return true
+	return pc, nil
 }
 
-func handleICE(msg []byte, pcs map[string]*webrtc.PeerConnection, pcsLock *sync.Mutex) {
+func handleICE(msg []byte, pcs map[string]*webrtc.PeerConnection, lock *sync.Mutex) {
 	var ice webrtc.ICECandidateInit
 	if err := json.Unmarshal(msg, &ice); err != nil || ice.Candidate == "" {
 		return
 	}
-	pcsLock.Lock()
-	defer pcsLock.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
 	for _, pc := range pcs {
-		pc.AddICECandidate(ice)
+		_ = pc.AddICECandidate(ice)
 	}
 }
 
+// --- Screen control helpers ---
+
 func sendScreenInfo(dc *webrtc.DataChannel) {
 	w, h := robotgo.GetScreenSize()
-	info := map[string]any{"type": "screen_info", "width": w, "height": h}
+	info := map[string]interface{}{"type": "screen_info", "width": w, "height": h}
 	b, _ := json.Marshal(info)
-	dc.Send(b)
+	_ = dc.Send(b)
 }
+
+// --- FFmpeg video streaming ---
 
 func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
 	cmd := exec.Command(
-		`C:\ffmpeg\bin\ffmpeg.exe`,
+		"ffmpeg",
 		"-f", "gdigrab",
-		"-framerate", "60",
+		"-framerate", "30",
 		"-draw_mouse", "0",
 		"-i", "desktop",
 		"-vcodec", "libx264",
@@ -161,14 +175,14 @@ func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
 		"-keyint_min", "30",
 		"-f", "h264", "-",
 	)
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Fatalf("FFmpeg stdout error: %v", err)
+		log.Fatalf("FFmpeg pipe error: %v", err)
 	}
 	stderr, _ := cmd.StderrPipe()
-	if err := cmd.Start(); err != nil {
-		log.Fatalf("Failed to start FFmpeg: %v", err)
-	}
+	_ = cmd.Start()
+
 	go logFFmpegOutput(stderr)
 	streamVideo(stdout, videoTrack)
 }
@@ -176,37 +190,40 @@ func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
 func logFFmpegOutput(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		log.Printf("[FFmpeg] %s", scanner.Text())
+		line := scanner.Text()
+		if strings.Contains(line, "Error") {
+			log.Printf("[FFmpeg] %s", line)
+		}
 	}
 }
 
 func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample) {
 	reader := bufio.NewReader(r)
-	buffer := make([]byte, 0, 1<<16)
+	buf := make([]byte, 0, 1<<16)
 	tmp := make([]byte, 4096)
 
 	for {
 		n, err := reader.Read(tmp)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				log.Printf("FFmpeg read error: %v", err)
+				log.Printf("FFmpeg stream read error: %v", err)
 			}
 			break
 		}
-		buffer = append(buffer, tmp[:n]...)
+		buf = append(buf, tmp[:n]...)
 		for {
-			start := findStartCode(buffer)
+			start := findStartCode(buf)
 			if start == -1 {
 				break
 			}
-			next := findStartCode(buffer[start+4:])
+			next := findStartCode(buf[start+4:])
 			if next == -1 {
 				break
 			}
 			next += start + 4
-			nalu := buffer[start:next]
-			videoTrack.WriteSample(media.Sample{Data: nalu, Duration: time.Second / 30})
-			buffer = buffer[next:]
+			nalu := buf[start:next]
+			_ = videoTrack.WriteSample(media.Sample{Data: nalu, Duration: time.Second / 30})
+			buf = buf[next:]
 		}
 	}
 }
@@ -220,37 +237,39 @@ func findStartCode(data []byte) int {
 	return -1
 }
 
+// --- Remote input (keyboard/mouse) ---
+
 func handleControl(data []byte) {
-	var control map[string]any
-	if err := json.Unmarshal(data, &control); err != nil {
+	var ctl map[string]interface{}
+	if err := json.Unmarshal(data, &ctl); err != nil {
 		return
 	}
 
-	switch control["type"] {
+	switch ctl["type"] {
 	case "mouse_move":
-		robotgo.MoveMouse(int(control["x"].(float64)), int(control["y"].(float64)))
+		robotgo.MoveMouse(int(ctl["x"].(float64)), int(ctl["y"].(float64)))
 	case "mouse_down":
-		mouseClick("down", int(control["button"].(float64)))
+		mouseClick("down", int(ctl["button"].(float64)))
 	case "mouse_up":
-		mouseClick("up", int(control["button"].(float64)))
+		mouseClick("up", int(ctl["button"].(float64)))
 	case "key_down":
-		if key := mapKey(control["key"].(string)); key != "" {
+		if key := mapKey(ctl["key"].(string)); key != "" {
 			robotgo.KeyDown(key)
 		}
 	case "key_up":
-		if key := mapKey(control["key"].(string)); key != "" {
+		if key := mapKey(ctl["key"].(string)); key != "" {
 			robotgo.KeyUp(key)
 		}
 	}
 }
 
-func mouseClick(action string, b int) {
-	btns := []string{"left", "center", "right"}
-	if b >= 0 && b < len(btns) {
+func mouseClick(action string, btn int) {
+	buttons := []string{"left", "center", "right"}
+	if btn >= 0 && btn < len(buttons) {
 		if action == "down" {
-			robotgo.MouseDown(btns[b])
+			robotgo.MouseDown(buttons[btn])
 		} else {
-			robotgo.MouseUp(btns[b])
+			robotgo.MouseUp(buttons[btn])
 		}
 	}
 }
