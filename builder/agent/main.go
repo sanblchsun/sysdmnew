@@ -1,4 +1,3 @@
-// builder/agent/main.go
 package main
 
 import (
@@ -8,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -161,12 +161,20 @@ func sendScreenInfo(dc *webrtc.DataChannel) {
 // --- FFmpeg video streaming ---
 
 func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
-	cmd := exec.Command(
-		"ffmpeg",
-		"-f", "gdigrab",
-		"-framerate", "30",
-		"-draw_mouse", "0",
-		"-i", "desktop",
+	// OS-specific FFmpeg input
+	var args []string
+	if runtime.GOOS == "windows" {
+		args = []string{"-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-i", "desktop"}
+	} else if runtime.GOOS == "linux" {
+		// Linux: use x11grab
+		args = []string{"-f", "x11grab", "-framerate", "30", "-draw_mouse", "0", "-i", ":0.0"}
+	} else {
+		// Fallback
+		args = []string{"-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-i", "desktop"}
+	}
+
+	// common rest of args
+	args = append(args,
 		"-vcodec", "libx264",
 		"-preset", "ultrafast",
 		"-tune", "zerolatency",
@@ -176,6 +184,7 @@ func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
 		"-f", "h264", "-",
 	)
 
+	cmd := exec.Command("ffmpeg", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatalf("FFmpeg pipe error: %v", err)
@@ -247,7 +256,22 @@ func handleControl(data []byte) {
 
 	switch ctl["type"] {
 	case "mouse_move":
-		robotgo.MoveMouse(int(ctl["x"].(float64)), int(ctl["y"].(float64)))
+		x := int(ctl["x"].(float64))
+		y := int(ctl["y"].(float64))
+		w, h := robotgo.GetScreenSize()
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		if x > w {
+			x = w
+		}
+		if y > h {
+			y = h
+		}
+		robotgo.Move(x, y)
 	case "mouse_down":
 		mouseClick("down", int(ctl["button"].(float64)))
 	case "mouse_up":

@@ -27,7 +27,6 @@
       let remoteScreenWidth = 1920;
       let remoteScreenHeight = 1080;
 
-      // --- Connection initialization ---
       async function connect() {
         const wsUrl =
           "ws://" + window.location.hostname + ":8000/ws/viewer/agent1";
@@ -40,7 +39,6 @@
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
           });
 
-          // Create data channel for control input
           dc = pc.createDataChannel("control");
           setupDataChannel(dc);
           setupConnection(pc);
@@ -50,7 +48,6 @@
           ws.send(JSON.stringify(offer));
         };
 
-        // Handle signaling messages (answer + ICE candidates)
         ws.onmessage = async (msg) => {
           const data = JSON.parse(msg.data);
           if (data.type === "answer") {
@@ -85,50 +82,74 @@
         pc.ontrack = (event) => {
           document.getElementById("video").srcObject = event.streams[0];
         };
-
         pc.onicecandidate = (event) => {
           if (event.candidate) ws.send(JSON.stringify(event.candidate));
         };
-
-        // Only receiving video
         pc.addTransceiver("video", { direction: "recvonly" });
       }
 
-      // --- Control event handling ---
       connect();
       const video = document.getElementById("video");
       let lastMouseMove = 0;
 
+      function clamp(v, a, b) {
+        return Math.max(a, Math.min(b, v));
+      }
+
+      // Corrected mapping that perfectly aligns
+      function mapPointerToRemote(clientX, clientY, rect) {
+        const rw = remoteScreenWidth;
+        const rh = remoteScreenHeight;
+        if (rw <= 0 || rh <= 0) return { x: 0, y: 0 };
+
+        // video display area with aspect ratio preserved
+        const rectRatio = rect.width / rect.height;
+        const videoRatio = rw / rh;
+
+        let drawWidth, drawHeight, offsetX, offsetY;
+        if (rectRatio > videoRatio) {
+          // black bars on sides
+          drawHeight = rect.height;
+          drawWidth = drawHeight * videoRatio;
+          offsetX = (rect.width - drawWidth) / 2;
+          offsetY = 0;
+        } else {
+          // black bars top/bottom
+          drawWidth = rect.width;
+          drawHeight = drawWidth / videoRatio;
+          offsetX = 0;
+          offsetY = (rect.height - drawHeight) / 2;
+        }
+
+        const xInVideo = clientX - rect.left - offsetX;
+        const yInVideo = clientY - rect.top - offsetY;
+
+        if (
+          xInVideo < 0 ||
+          yInVideo < 0 ||
+          xInVideo > drawWidth ||
+          yInVideo > drawHeight
+        ) {
+          return null; // outside of active video area
+        }
+
+        const nx = xInVideo / drawWidth;
+        const ny = yInVideo / drawHeight;
+        const remoteX = Math.round(clamp(nx, 0, 1) * rw);
+        const remoteY = Math.round(clamp(ny, 0, 1) * rh);
+        return { x: remoteX, y: remoteY };
+      }
+
       video.addEventListener("mousemove", (e) => {
         const now = Date.now();
-        if (now - lastMouseMove < 16) return; // Limit to ~60Hz
+        if (now - lastMouseMove < 16) return;
         lastMouseMove = now;
 
         if (!dc || dc.readyState !== "open") return;
-
         const rect = video.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const aspectRatio = remoteScreenWidth / remoteScreenHeight;
-        const videoAspectRatio = rect.width / rect.height;
-
-        let scaledX, scaledY;
-        if (aspectRatio > videoAspectRatio) {
-          const height = rect.width / aspectRatio;
-          scaledX = (x / rect.width) * remoteScreenWidth;
-          scaledY =
-            ((y - (rect.height - height) / 2) / height) * remoteScreenHeight;
-        } else {
-          const width = rect.height * aspectRatio;
-          scaledX =
-            ((x - (rect.width - width) / 2) / width) * remoteScreenWidth;
-          scaledY = (y / rect.height) * remoteScreenHeight;
-        }
-
-        sendControl("mouse_move", {
-          x: Math.round(scaledX),
-          y: Math.round(scaledY),
-        });
+        const mapped = mapPointerToRemote(e.clientX, e.clientY, rect);
+        if (!mapped) return;
+        sendControl("mouse_move", mapped);
       });
 
       ["mousedown", "mouseup"].forEach((eventType) =>
@@ -152,6 +173,10 @@
           dc.send(JSON.stringify({ type, ...payload }));
         }
       }
+
+      window.addEventListener("resize", () => {
+        lastMouseMove = 0;
+      });
     </script>
   </body>
 </html>
