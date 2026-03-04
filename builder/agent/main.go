@@ -259,6 +259,10 @@ func handleControl(data []byte) {
 		x := int(ctl["x"].(float64))
 		y := int(ctl["y"].(float64))
 		w, h := robotgo.GetScreenSize()
+		log.Printf("Координаты w: ", w)
+		log.Printf("Координаты h: ", h)
+		log.Printf("Координаты x: ", x)
+		log.Printf("Координаты y: ", y)
 		if x < 0 {
 			x = 0
 		}
