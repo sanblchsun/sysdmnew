@@ -155,7 +155,7 @@ func sendScreenInfo(dc *webrtc.DataChannel) {
 	w, h := robotgo.GetScreenSize()
 	info := map[string]interface{}{"type": "screen_info", "width": w, "height": h}
 	b, _ := json.Marshal(info)
-	_ = dc.Send(b)
+	_ = dc.SendText(string(b))
 }
 
 // --- FFmpeg video streaming ---
@@ -164,7 +164,7 @@ func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
 	// OS-specific FFmpeg input
 	var args []string
 	if runtime.GOOS == "windows" {
-		args = []string{"-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-i", "desktop"}
+		args = []string{"-f", "gdigrab", "-framerate", "60", "-draw_mouse", "0", "-i", "desktop"}
 	} else if runtime.GOOS == "linux" {
 		// Linux: use x11grab
 		args = []string{"-f", "x11grab", "-framerate", "30", "-draw_mouse", "0", "-i", ":0.0"}

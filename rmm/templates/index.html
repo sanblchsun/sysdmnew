@@ -24,9 +24,11 @@
 
     <script>
       let pc, ws, dc;
-      let remoteScreenWidth = 1920;
-      let remoteScreenHeight = 966;
-
+      let remoteScreenWidth = 800;
+      let remoteScreenHeight = 600;
+      // Блокируем стандартное контекстное меню браузера
+      document.addEventListener("contextmenu", (e) => e.preventDefault());
+      
       async function connect() {
         const wsUrl =
           "ws://" + window.location.hostname + ":8000/ws/viewer/agent1";
