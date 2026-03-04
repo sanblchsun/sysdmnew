@@ -1,31 +1,32 @@
-<!-- rmm/templates/index.html -->
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <title>RMM Viewer</title>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+      }
+      video {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+    </style>
   </head>
+
   <body>
-    <video
-      id="video"
-      autoplay
-      playsinline
-      muted
-      style="width: 100%; height: auto"
-    ></video>
+    <video id="video" autoplay playsinline muted></video>
 
     <script>
-      let pc = null;
-      let ws = null;
-      let dc = null;
-
+      let pc, ws, dc;
       let remoteScreenWidth = 1920;
       let remoteScreenHeight = 1080;
 
-      function connect() {
+      async function connect() {
         const wsUrl =
           "ws://" + window.location.hostname + ":8000/ws/viewer/agent1";
-
         ws = new WebSocket(wsUrl);
 
         ws.onopen = async () => {
@@ -34,53 +35,54 @@
           });
 
           dc = pc.createDataChannel("control");
-
-          dc.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === "screen_info") {
-              remoteScreenWidth = data.width;
-              remoteScreenHeight = data.height;
-            }
-          };
-
-          pc.ontrack = (event) => {
-            document.getElementById("video").srcObject = event.streams[0];
-          };
-
-          pc.onicecandidate = (event) => {
-            if (event.candidate) {
-              ws.send(JSON.stringify(event.candidate));
-            }
-          };
-
-          pc.addTransceiver("video", { direction: "recvonly" });
+          setupDataChannel(dc);
+          setupConnection(pc);
 
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          ws.send(JSON.stringify(pc.localDescription));
+          ws.send(JSON.stringify(offer));
         };
 
         ws.onmessage = async (msg) => {
           const data = JSON.parse(msg.data);
-
           if (data.type === "answer") {
-            await pc.setRemoteDescription(new RTCSessionDescription(data));
+            await pc.setRemoteDescription(data);
           } else if (data.candidate) {
-            await pc.addIceCandidate(new RTCIceCandidate(data));
+            await pc.addIceCandidate(data);
           }
         };
+      }
+
+      function setupDataChannel(channel) {
+        channel.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === "screen_info") {
+            remoteScreenWidth = data.width;
+            remoteScreenHeight = data.height;
+          }
+        };
+      }
+
+      function setupConnection(pc) {
+        pc.ontrack = (event) => {
+          document.getElementById("video").srcObject = event.streams[0];
+        };
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) ws.send(JSON.stringify(event.candidate));
+        };
+
+        pc.addTransceiver("video", { direction: "recvonly" });
       }
 
       connect();
 
       const video = document.getElementById("video");
-
       let lastMouseMoveTime = 0;
+
       video.addEventListener("mousemove", (e) => {
         const now = Date.now();
-        if (now - lastMouseMoveTime < 10) {
-          return;
-        }
+        if (now - lastMouseMoveTime < 10) return;
         lastMouseMoveTime = now;
 
         if (!dc || dc.readyState !== "open") return;
@@ -105,50 +107,33 @@
           scaledY = (y / rect.height) * remoteScreenHeight;
         }
 
-        dc.send(
-          JSON.stringify({
-            type: "mouse_move",
-            x: Math.round(scaledX),
-            y: Math.round(scaledY),
-          }),
-        );
+        sendControl("mouse_move", {
+          x: Math.round(scaledX),
+          y: Math.round(scaledY),
+        });
       });
 
-      video.addEventListener("mousedown", (e) => {
-        dc.send(
-          JSON.stringify({
-            type: "mouse_down",
+      ["mousedown", "mouseup"].forEach((eventType) =>
+        video.addEventListener(eventType, (e) => {
+          sendControl(eventType === "mousedown" ? "mouse_down" : "mouse_up", {
             button: e.button,
-          }),
-        );
-      });
+          });
+        }),
+      );
 
-      video.addEventListener("mouseup", (e) => {
-        dc.send(
-          JSON.stringify({
-            type: "mouse_up",
-            button: e.button,
-          }),
-        );
-      });
-
-      window.addEventListener("keydown", (e) => {
-        dc.send(
-          JSON.stringify({
-            type: "key_down",
+      ["keydown", "keyup"].forEach((eventType) =>
+        window.addEventListener(eventType, (e) => {
+          sendControl(eventType === "keydown" ? "key_down" : "key_up", {
             key: e.code,
-          }),
-        );
-      });
+          });
+        }),
+      );
 
-      window.addEventListener("keyup", (e) => {
-        dc.send(
-          JSON.stringify({
-            type: "key_up",
-            key: e.code,
-          }),
-        );
-      });
+      function sendControl(type, payload) {
+        if (dc && dc.readyState === "open") {
+          dc.send(JSON.stringify({ type, ...payload }));
+        }
+      }
     </script>
   </body>
 </html>
