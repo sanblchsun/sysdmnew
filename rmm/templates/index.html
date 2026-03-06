@@ -4,38 +4,66 @@
     <meta charset="UTF-8" />
     <title>RMM Viewer</title>
     <style>
+      html,
       body {
         margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
         background: #111;
         overflow: hidden;
       }
+
       video {
         width: 100%;
-        height: 100vh;
+        height: 100%;
         display: block;
         object-fit: contain;
         background-color: black;
+        cursor: crosshair; /* курсор при наведении, чтобы видно было */
+      }
+
+      .status {
+        position: fixed;
+        left: 10px;
+        bottom: 10px;
+        color: #0f0;
+        font-family: monospace;
+        font-size: 12px;
       }
     </style>
   </head>
 
   <body>
     <video id="video" autoplay playsinline muted></video>
+    <div id="status" class="status">Connecting...</div>
 
     <script>
       let pc, ws, dc;
-      let remoteScreenWidth = 800;
-      let remoteScreenHeight = 600;
-      // Блокируем стандартное контекстное меню браузера
+      let remoteScreenWidth = 0;
+      let remoteScreenHeight = 0;
+      let lastMouseMove = 0;
+
+      // блокируем контекстное меню
       document.addEventListener("contextmenu", (e) => e.preventDefault());
-      
+
+      // статус
+      const statusEl = document.getElementById("status");
+      const video = document.getElementById("video");
+
+      function setStatus(msg, color = "#0f0") {
+        statusEl.textContent = msg;
+        statusEl.style.color = color;
+      }
+
       async function connect() {
-        const wsUrl =
+        const addr =
           "ws://" + window.location.hostname + ":8000/ws/viewer/agent1";
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(addr);
 
         ws.onopen = async () => {
-          console.log("Connected to signaling server");
+          console.log("WS connected");
+          setStatus("Connected");
 
           pc = new RTCPeerConnection({
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -50,76 +78,107 @@
           ws.send(JSON.stringify(offer));
         };
 
-        ws.onmessage = async (msg) => {
-          const data = JSON.parse(msg.data);
-          if (data.type === "answer") {
-            await pc.setRemoteDescription(data);
-          } else if (data.candidate) {
-            await pc.addIceCandidate(data);
+        ws.onmessage = async (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === "answer") {
+              await pc.setRemoteDescription(data);
+            } else if (data.candidate) {
+              await pc.addIceCandidate(data);
+            }
+          } catch (err) {
+            console.error(err);
           }
         };
 
         ws.onclose = () => {
-          console.warn("Disconnected, retrying in 2s...");
+          setStatus("Reconnecting...", "#f90");
+          console.warn("Disconnected, retrying...");
           setTimeout(connect, 2000);
         };
       }
 
       function setupDataChannel(channel) {
-        channel.onmessage = (event) => {
-          const data = JSON.parse(event.data);
+        channel.onopen = () => setStatus("Ready");
+        channel.onclose = () => setStatus("Disconnected", "#f66");
+        channel.onerror = (e) => console.error("DataChannel error:", e);
+
+        channel.onmessage = (e) => {
+          let data;
+          try {
+            data = JSON.parse(e.data);
+          } catch {
+            return;
+          }
           if (data.type === "screen_info") {
             remoteScreenWidth = data.width;
             remoteScreenHeight = data.height;
-            console.log(
-              "Remote screen:",
-              remoteScreenWidth,
-              remoteScreenHeight,
-            );
+            console.log("Screen info →", remoteScreenWidth, remoteScreenHeight);
           }
         };
       }
 
       function setupConnection(pc) {
-        pc.ontrack = (event) => {
-          document.getElementById("video").srcObject = event.streams[0];
+        pc.ontrack = (e) => {
+          video.srcObject = e.streams[0];
         };
-        pc.onicecandidate = (event) => {
-          if (event.candidate) ws.send(JSON.stringify(event.candidate));
+        pc.onicecandidate = (e) => {
+          if (e.candidate) ws.send(JSON.stringify(e.candidate));
         };
         pc.addTransceiver("video", { direction: "recvonly" });
       }
 
-      connect();
-      const video = document.getElementById("video");
-      let lastMouseMove = 0;
-
-      function clamp(v, a, b) {
-        return Math.max(a, Math.min(b, v));
+      // --- Авто‑синхронизация размеров видео (важно!) ---
+      function syncVideoDimensions() {
+        if (video.videoWidth && video.videoHeight) {
+          // если сервер не слал размеры, подхватываем реальные кадры
+          if (
+            !remoteScreenWidth ||
+            !remoteScreenHeight ||
+            Math.abs(remoteScreenWidth - video.videoWidth) > 10
+          ) {
+            remoteScreenWidth = video.videoWidth;
+            remoteScreenHeight = video.videoHeight;
+            console.log(
+              "Auto‑synced from metadata:",
+              remoteScreenWidth,
+              remoteScreenHeight,
+            );
+          }
+        }
       }
 
-      // Corrected mapping that perfectly aligns
+      video.addEventListener("loadedmetadata", syncVideoDimensions);
+      new ResizeObserver(syncVideoDimensions).observe(video);
+
+      // --- Управление ---
+      function sendControl(type, payload) {
+        if (dc && dc.readyState === "open") {
+          dc.send(JSON.stringify({ type, ...payload }));
+        }
+      }
+
+      function clamp(v, min, max) {
+        return Math.max(min, Math.min(max, v));
+      }
+
       function mapPointerToRemote(clientX, clientY, rect) {
-        const rw = remoteScreenWidth;
-        const rh = remoteScreenHeight;
-        if (rw <= 0 || rh <= 0) return { x: 0, y: 0 };
+        if (remoteScreenWidth <= 0 || remoteScreenHeight <= 0) return null;
 
-        // video display area with aspect ratio preserved
         const rectRatio = rect.width / rect.height;
-        const videoRatio = rw / rh;
+        const videoRatio = remoteScreenWidth / remoteScreenHeight;
 
-        let drawWidth, drawHeight, offsetX, offsetY;
+        let drawWidth,
+          drawHeight,
+          offsetX = 0,
+          offsetY = 0;
         if (rectRatio > videoRatio) {
-          // black bars on sides
           drawHeight = rect.height;
           drawWidth = drawHeight * videoRatio;
           offsetX = (rect.width - drawWidth) / 2;
-          offsetY = 0;
         } else {
-          // black bars top/bottom
           drawWidth = rect.width;
           drawHeight = drawWidth / videoRatio;
-          offsetX = 0;
           offsetY = (rect.height - drawHeight) / 2;
         }
 
@@ -128,17 +187,17 @@
 
         if (
           xInVideo < 0 ||
-          yInVideo < 0 ||
           xInVideo > drawWidth ||
+          yInVideo < 0 ||
           yInVideo > drawHeight
         ) {
-          return null; // outside of active video area
+          return null;
         }
 
         const nx = xInVideo / drawWidth;
         const ny = yInVideo / drawHeight;
-        const remoteX = Math.round(clamp(nx, 0, 1) * rw);
-        const remoteY = Math.round(clamp(ny, 0, 1) * rh);
+        const remoteX = Math.round(clamp(nx, 0, 1) * (remoteScreenWidth - 1));
+        const remoteY = Math.round(clamp(ny, 0, 1) * (remoteScreenHeight - 1));
         return { x: remoteX, y: remoteY };
       }
 
@@ -146,39 +205,35 @@
         const now = Date.now();
         if (now - lastMouseMove < 16) return;
         lastMouseMove = now;
-
         if (!dc || dc.readyState !== "open") return;
+
         const rect = video.getBoundingClientRect();
         const mapped = mapPointerToRemote(e.clientX, e.clientY, rect);
-        if (!mapped) return;
-        sendControl("mouse_move", mapped);
+        if (mapped) sendControl("mouse_move", mapped);
       });
 
-      ["mousedown", "mouseup"].forEach((eventType) =>
-        video.addEventListener(eventType, (e) => {
-          sendControl(eventType === "mousedown" ? "mouse_down" : "mouse_up", {
+      ["mousedown", "mouseup"].forEach((evt) =>
+        video.addEventListener(evt, (e) => {
+          sendControl(evt === "mousedown" ? "mouse_down" : "mouse_up", {
             button: e.button,
           });
         }),
       );
 
-      ["keydown", "keyup"].forEach((eventType) =>
-        window.addEventListener(eventType, (e) => {
-          sendControl(eventType === "keydown" ? "key_down" : "key_up", {
+      ["keydown", "keyup"].forEach((evt) =>
+        window.addEventListener(evt, (e) => {
+          sendControl(evt === "keydown" ? "key_down" : "key_up", {
             key: e.code,
           });
         }),
       );
 
-      function sendControl(type, payload) {
-        if (dc && dc.readyState === "open") {
-          dc.send(JSON.stringify({ type, ...payload }));
-        }
-      }
-
-      window.addEventListener("resize", () => {
-        lastMouseMove = 0;
+      // --- По клику запрашиваем актуальные размеры ---
+      video.addEventListener("click", () => {
+        sendControl("request_screen_info", {});
       });
+
+      connect();
     </script>
   </body>
 </html>

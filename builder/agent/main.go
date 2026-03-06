@@ -1,3 +1,4 @@
+// builder/agent/main.go
 package main
 
 import (
@@ -7,7 +8,9 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,9 +21,63 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media"
 )
 
-// --- Configuration constants ---
+// --- Конфигурация ---
 const serverURL = "ws://192.168.2.191:8000/ws/agent/agent1"
 
+func init() {
+	if runtime.GOOS == "windows" {
+		initWindowsDPI()
+	}
+}
+
+// --- Глобальные переменные ---
+var (
+	actualScreenWidth  int
+	actualScreenHeight int
+	activeDataChannel  *webrtc.DataChannel
+)
+
+// --- Отправка информации об экране ---
+func sendScreenInfo(dc *webrtc.DataChannel) {
+	// Предпочитаем физическое DPI‑разрешение
+	w, h := getPhysicalScreenSize()
+	if w == 0 || h == 0 {
+		w, h = detectResolution()
+	}
+	actualScreenWidth, actualScreenHeight = w, h
+
+	info := map[string]interface{}{
+		"type":   "screen_info",
+		"width":  w,
+		"height": h,
+	}
+	b, _ := json.Marshal(info)
+	_ = dc.SendText(string(b))
+	log.Printf("[SCREEN] Reported size: %dx%d", w, h)
+}
+
+// --- Определение разрешения через ffmpeg ---
+func detectResolution() (int, int) {
+	var args []string
+	if runtime.GOOS == "windows" {
+		args = []string{"-f", "gdigrab", "-i", "desktop", "-vframes", "1", "-f", "null", "-"}
+	} else {
+		args = []string{"-f", "x11grab", "-i", ":0.0", "-vframes", "1", "-f", "null", "-"}
+	}
+	out, err := exec.Command("ffmpeg", args...).CombinedOutput()
+	if err == nil {
+		re := regexp.MustCompile(`(\d{3,5})x(\d{3,5})`)
+		if m := re.FindStringSubmatch(string(out)); len(m) == 3 {
+			w, _ := strconv.Atoi(m[1])
+			h, _ := strconv.Atoi(m[2])
+			return w, h
+		}
+	}
+	w, h := robotgo.GetScreenSize()
+	return w, h
+}
+
+// --- Основной запуск ---
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Printf("Connecting to signaling server: %s\n", serverURL)
@@ -30,7 +87,7 @@ func main() {
 		log.Fatalf("WebSocket connect error: %v", err)
 	}
 	defer ws.Close()
-	log.Println("Connected to signaling server")
+	log.Println("Connected")
 
 	writeChan := make(chan []byte, 100)
 	go func() {
@@ -47,7 +104,7 @@ func main() {
 		"video", "rmm",
 	)
 	if err != nil {
-		log.Fatalf("Failed creating track: %v", err)
+		log.Fatalf("Track create error: %v", err)
 	}
 
 	go startFFmpeg(videoTrack)
@@ -65,9 +122,10 @@ func main() {
 	}
 }
 
-// --- SDP and ICE handling ---
+// --- SDP/ICE ---
+func handleSDP(msg []byte, out chan []byte, pcs map[string]*webrtc.PeerConnection,
+	lock *sync.Mutex, videoTrack *webrtc.TrackLocalStaticSample) bool {
 
-func handleSDP(msg []byte, out chan []byte, pcs map[string]*webrtc.PeerConnection, lock *sync.Mutex, videoTrack *webrtc.TrackLocalStaticSample) bool {
 	var sdp webrtc.SessionDescription
 	if err := json.Unmarshal(msg, &sdp); err != nil || sdp.Type != webrtc.SDPTypeOffer {
 		return false
@@ -86,26 +144,19 @@ func handleSDP(msg []byte, out chan []byte, pcs map[string]*webrtc.PeerConnectio
 	pcs["viewer"] = pc
 	lock.Unlock()
 
-	if err := pc.SetRemoteDescription(sdp); err != nil {
-		log.Printf("SetRemoteDescription error: %v", err)
-		return true
-	}
+	_ = pc.SetRemoteDescription(sdp)
 
-	answer, err := pc.CreateAnswer(nil)
-	if err != nil {
-		log.Printf("CreateAnswer error: %v", err)
-		return true
-	}
-	if err := pc.SetLocalDescription(answer); err != nil {
-		log.Printf("SetLocalDescription error: %v", err)
-		return true
-	}
+	answer, _ := pc.CreateAnswer(nil)
+	_ = pc.SetLocalDescription(answer)
 	payload, _ := json.Marshal(answer)
 	out <- payload
+
 	return true
 }
 
-func newPeerConnection(out chan []byte, videoTrack *webrtc.TrackLocalStaticSample) (*webrtc.PeerConnection, error) {
+func newPeerConnection(out chan []byte,
+	videoTrack *webrtc.TrackLocalStaticSample) (*webrtc.PeerConnection, error) {
+
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
 	})
@@ -118,9 +169,11 @@ func newPeerConnection(out chan []byte, videoTrack *webrtc.TrackLocalStaticSampl
 	}
 
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+		activeDataChannel = dc
 		dc.OnOpen(func() {
-			log.Println("Control channel opened")
+			log.Println("DataChannel opened")
 			sendScreenInfo(dc)
+			startScreenWatcher(dc)
 		})
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			handleControl(msg.Data)
@@ -149,49 +202,48 @@ func handleICE(msg []byte, pcs map[string]*webrtc.PeerConnection, lock *sync.Mut
 	}
 }
 
-// --- Screen control helpers ---
-
-func sendScreenInfo(dc *webrtc.DataChannel) {
-	w, h := robotgo.GetScreenSize()
-	info := map[string]interface{}{"type": "screen_info", "width": w, "height": h}
-	b, _ := json.Marshal(info)
-	_ = dc.SendText(string(b))
+// --- Монитор размеров экрана ---
+func startScreenWatcher(dc *webrtc.DataChannel) {
+	go func() {
+		prevW, prevH := actualScreenWidth, actualScreenHeight
+		for {
+			time.Sleep(2 * time.Second)
+			w, h := getPhysicalScreenSize()
+			if w == 0 || h == 0 {
+				w, h = detectResolution()
+			}
+			if w != prevW || h != prevH {
+				prevW, prevH = w, h
+				actualScreenWidth, actualScreenHeight = w, h
+				info := map[string]interface{}{
+					"type":   "screen_info",
+					"width":  w,
+					"height": h,
+				}
+				b, _ := json.Marshal(info)
+				_ = dc.SendText(string(b))
+				log.Printf("[SCREEN] Updated: %dx%d", w, h)
+			}
+		}
+	}()
 }
 
-// --- FFmpeg video streaming ---
-
+// --- FFmpeg видеопоток ---
 func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
-	// OS-specific FFmpeg input
 	var args []string
 	if runtime.GOOS == "windows" {
 		args = []string{"-f", "gdigrab", "-framerate", "60", "-draw_mouse", "0", "-i", "desktop"}
-	} else if runtime.GOOS == "linux" {
-		// Linux: use x11grab
-		args = []string{"-f", "x11grab", "-framerate", "30", "-draw_mouse", "0", "-i", ":0.0"}
 	} else {
-		// Fallback
-		args = []string{"-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-i", "desktop"}
+		args = []string{"-f", "x11grab", "-framerate", "30", "-draw_mouse", "0", "-i", ":0.0"}
 	}
-
-	// common rest of args
 	args = append(args,
-		"-vcodec", "libx264",
-		"-preset", "ultrafast",
-		"-tune", "zerolatency",
-		"-pix_fmt", "yuv420p",
-		"-g", "30",
-		"-keyint_min", "30",
-		"-f", "h264", "-",
+		"-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+		"-pix_fmt", "yuv420p", "-g", "30", "-keyint_min", "30", "-f", "h264", "-",
 	)
-
 	cmd := exec.Command("ffmpeg", args...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Fatalf("FFmpeg pipe error: %v", err)
-	}
+	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	_ = cmd.Start()
-
 	go logFFmpegOutput(stderr)
 	streamVideo(stdout, videoTrack)
 }
@@ -210,14 +262,13 @@ func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample) {
 	reader := bufio.NewReader(r)
 	buf := make([]byte, 0, 1<<16)
 	tmp := make([]byte, 4096)
-
 	for {
 		n, err := reader.Read(tmp)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				log.Printf("FFmpeg stream read error: %v", err)
+				log.Printf("FFmpeg read error: %v", err)
 			}
-			break
+			return
 		}
 		buf = append(buf, tmp[:n]...)
 		for {
@@ -246,91 +297,76 @@ func findStartCode(data []byte) int {
 	return -1
 }
 
-// --- Remote input (keyboard/mouse) ---
-
+// --- Управление вводом ---
 func handleControl(data []byte) {
 	var ctl map[string]interface{}
 	if err := json.Unmarshal(data, &ctl); err != nil {
+		log.Printf("[CONTROL] bad json: %v", err)
 		return
 	}
 
-	switch ctl["type"] {
+	t, _ := ctl["type"].(string)
+	log.Printf("[CONTROL] %+v", ctl)
+
+	switch t {
+
+	case "request_screen_info":
+		if activeDataChannel != nil {
+			sendScreenInfo(activeDataChannel)
+		}
+
 	case "mouse_move":
-		x := int(ctl["x"].(float64))
-		y := int(ctl["y"].(float64))
+		x, okX := ctl["x"].(float64)
+		y, okY := ctl["y"].(float64)
+		if !okX || !okY {
+			return
+		}
 		w, h := robotgo.GetScreenSize()
-		log.Printf("Координаты w: ", w)
-		log.Printf("Координаты h: ", h)
-		log.Printf("Координаты x: ", x)
-		log.Printf("Координаты y: ", y)
-		if x < 0 {
-			x = 0
+		pw, ph := getPhysicalScreenSize()
+		if pw > 0 && ph > 0 {
+			w, h = pw, ph
 		}
-		if y < 0 {
-			y = 0
+		tw := actualScreenWidth
+		th := actualScreenHeight
+		if tw == 0 || th == 0 {
+			tw, th = w, h
 		}
-		if x > w {
-			x = w
-		}
-		if y > h {
-			y = h
-		}
-		robotgo.Move(x, y)
-	case "mouse_down":
-		mouseClick("down", int(ctl["button"].(float64)))
-	case "mouse_up":
-		mouseClick("up", int(ctl["button"].(float64)))
-	case "key_down":
-		if key := mapKey(ctl["key"].(string)); key != "" {
-			robotgo.KeyDown(key)
-		}
-	case "key_up":
-		if key := mapKey(ctl["key"].(string)); key != "" {
-			robotgo.KeyUp(key)
-		}
-	}
-}
+		sx := float64(w) / float64(tw)
+		sy := float64(h) / float64(th)
+		safeX := clampInt(int(x*sx), 0, w-1)
+		safeY := clampInt(int(y*sy), 0, h-1)
+		robotgo.MoveMouse(safeX, safeY)
 
-func mouseClick(action string, btn int) {
-	buttons := []string{"left", "center", "right"}
-	if btn >= 0 && btn < len(buttons) {
-		if action == "down" {
-			robotgo.MouseDown(buttons[btn])
+	case "mouse_down", "mouse_up":
+		btn := int(ctl["button"].(float64))
+		names := []string{"left", "middle", "right"}
+		if btn < 0 || btn >= len(names) {
+			return
+		}
+		if t == "mouse_down" {
+			robotgo.MouseDown(names[btn])
 		} else {
-			robotgo.MouseUp(buttons[btn])
+			robotgo.MouseUp(names[btn])
 		}
+
+	case "mouse_click":
+		btn := int(ctl["button"].(float64))
+		names := []string{"left", "middle", "right"}
+		if btn >= 0 && btn < len(names) {
+			robotgo.Click(names[btn])
+		}
+
+	default:
+		log.Printf("[CONTROL] Unhandled event %s", t)
 	}
 }
 
-func mapKey(code string) string {
-	switch {
-	case strings.HasPrefix(code, "Key"):
-		return strings.ToLower(code[3:])
-	case strings.HasPrefix(code, "Digit"):
-		return code[5:]
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
 	}
-	switch code {
-	case "Space":
-		return "space"
-	case "Enter":
-		return "enter"
-	case "Escape":
-		return "esc"
-	case "ShiftLeft", "ShiftRight":
-		return "shift"
-	case "ControlLeft", "ControlRight":
-		return "ctrl"
-	case "AltLeft", "AltRight":
-		return "alt"
-	case "ArrowLeft":
-		return "left"
-	case "ArrowRight":
-		return "right"
-	case "ArrowUp":
-		return "up"
-	case "ArrowDown":
-		return "down"
-	default:
-		return ""
+	if v > max {
+		return max
 	}
+	return v
 }
