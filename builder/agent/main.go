@@ -22,7 +22,7 @@ import (
 )
 
 // --- Конфигурация ---
-const serverURL = "ws://192.168.2.191:8000/ws/agent/agent1"
+const serverURL = "ws://192.168.88.127:8000/ws/agent/agent1"
 
 func init() {
 	if runtime.GOOS == "windows" {
@@ -35,17 +35,17 @@ var (
 	actualScreenWidth  int
 	actualScreenHeight int
 	activeDataChannel  *webrtc.DataChannel
+	resolutionUpdates  = make(chan [2]int, 1)
+	reResolution       = regexp.MustCompile(`(\d{3,5})x(\d{3,5})`)
 )
 
 // --- Отправка информации об экране ---
 func sendScreenInfo(dc *webrtc.DataChannel) {
-	// Предпочитаем физическое DPI‑разрешение
 	w, h := getPhysicalScreenSize()
 	if w == 0 || h == 0 {
 		w, h = detectResolution()
 	}
 	actualScreenWidth, actualScreenHeight = w, h
-
 	info := map[string]interface{}{
 		"type":   "screen_info",
 		"width":  w,
@@ -56,7 +56,7 @@ func sendScreenInfo(dc *webrtc.DataChannel) {
 	log.Printf("[SCREEN] Reported size: %dx%d", w, h)
 }
 
-// --- Определение разрешения через ffmpeg ---
+// --- Определение разрешения через ffmpeg (fallback) ---
 func detectResolution() (int, int) {
 	var args []string
 	if runtime.GOOS == "windows" {
@@ -66,8 +66,7 @@ func detectResolution() (int, int) {
 	}
 	out, err := exec.Command("ffmpeg", args...).CombinedOutput()
 	if err == nil {
-		re := regexp.MustCompile(`(\d{3,5})x(\d{3,5})`)
-		if m := re.FindStringSubmatch(string(out)); len(m) == 3 {
+		if m := reResolution.FindStringSubmatch(string(out)); len(m) == 3 {
 			w, _ := strconv.Atoi(m[1])
 			h, _ := strconv.Atoi(m[2])
 			return w, h
@@ -108,6 +107,23 @@ func main() {
 	}
 
 	go startFFmpeg(videoTrack)
+
+	// Горшина, которая слушает обновления разрешения от FFmpeg
+	go func() {
+		for res := range resolutionUpdates {
+			actualScreenWidth, actualScreenHeight = res[0], res[1]
+			if activeDataChannel != nil {
+				info := map[string]interface{}{
+					"type":   "screen_info",
+					"width":  res[0],
+					"height": res[1],
+				}
+				b, _ := json.Marshal(info)
+				_ = activeDataChannel.SendText(string(b))
+				log.Printf("[FFmpeg] Sent updated screen_info: %dx%d", res[0], res[1])
+			}
+		}
+	}()
 
 	for {
 		_, msg, err := ws.ReadMessage()
@@ -207,7 +223,7 @@ func startScreenWatcher(dc *webrtc.DataChannel) {
 	go func() {
 		prevW, prevH := actualScreenWidth, actualScreenHeight
 		for {
-			time.Sleep(2 * time.Second)
+			time.Sleep(3 * time.Second)
 			w, h := getPhysicalScreenSize()
 			if w == 0 || h == 0 {
 				w, h = detectResolution()
@@ -238,22 +254,35 @@ func startFFmpeg(videoTrack *webrtc.TrackLocalStaticSample) {
 	}
 	args = append(args,
 		"-vcodec", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-		"-pix_fmt", "yuv420p", "-g", "30", "-keyint_min", "30", "-f", "h264", "-",
+		"-pix_fmt", "yuv420p", "-g", "30", "-keyint_min", "30",
+		"-f", "h264", "-",
 	)
 	cmd := exec.Command("ffmpeg", args...)
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	_ = cmd.Start()
-	go logFFmpegOutput(stderr)
+
+	// читаем stderr и парсим разрешение
+	go parseFFmpegResolution(stderr)
 	streamVideo(stdout, videoTrack)
 }
 
-func logFFmpegOutput(r io.Reader) {
+func parseFFmpegResolution(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.Contains(line, "Error") {
-			log.Printf("[FFmpeg] %s", line)
+		if strings.Contains(line, "Video:") {
+			if m := reResolution.FindStringSubmatch(line); len(m) == 3 {
+				w, _ := strconv.Atoi(m[1])
+				h, _ := strconv.Atoi(m[2])
+				if w > 0 && h > 0 {
+					select {
+					case resolutionUpdates <- [2]int{w, h}:
+						log.Printf("[FFmpeg] Video stream size detected %dx%d", w, h)
+					default:
+					}
+				}
+			}
 		}
 	}
 }
