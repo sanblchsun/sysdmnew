@@ -1,5 +1,5 @@
 //go:build !windows
-
+// builder/agent/dpi_stub.go
 package main
 
 // Заглушки для других ОС

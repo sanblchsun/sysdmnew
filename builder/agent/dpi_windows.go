@@ -1,5 +1,6 @@
 //go:build windows
 
+// builder/agent/dpi_windows.go
 package main
 
 import (
@@ -17,7 +18,6 @@ var (
 
 func initWindowsDPI() {
 	setDPIAware.Call()
-	log.Println("[DPI] Process set DPI‑aware")
 }
 
 // Получаем физические (не масштабированные) размеры экрана
