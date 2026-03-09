@@ -1,19 +1,21 @@
+// builder/agent/main.go
 package main
 
 import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt" // Добавлен для fmt.Sprintf
+	"fmt"
 	"io"
 	"log"
+	"os" // Добавлен для os.Exit
 	"os/exec"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall" // Добавлен для syscall.SIGTERM
+	"syscall"
 	"time"
 
 	"github.com/go-vgo/robotgo"
@@ -23,7 +25,11 @@ import (
 )
 
 // --- Конфигурация ---
-const serverURL = "ws://192.168.88.127:8000/ws/agent/agent1"
+const (
+	serverURL           = "ws://192.168.88.127:8000/ws/agent/agent1"
+	websocketMaxRetries = 5               // Максимальное количество попыток подключения к WebSocket
+	websocketRetryDelay = 5 * time.Second // Задержка между попытками подключения к WebSocket
+)
 
 func init() {
 	if runtime.GOOS == "windows" {
@@ -37,7 +43,7 @@ var (
 	actualScreenHeight int
 	activeDataChannel  *webrtc.DataChannel
 	resolutionUpdates  = make(chan [2]int, 1)
-	reResolution       = regexp.MustCompile(`(\d{3,5})x(\d{3,5})`) // Исправлено экранирование и MustCompile
+	reResolution       = regexp.MustCompile(`(\d{3,5})x(\d{3,5})`)
 
 	// Канал для сигнализации о перезапуске FFmpeg
 	ffmpegRestartSignal = make(chan struct{}, 1) // Буферизованный, чтобы sender не блокировался
@@ -57,7 +63,10 @@ func sendScreenInfo(dc *webrtc.DataChannel) {
 		"height": h,
 	}
 	b, _ := json.Marshal(info)
-	_ = dc.SendText(string(b))
+	err := dc.SendText(string(b))
+	if err != nil {
+		log.Printf("[ERROR] Failed to send screen_info via DataChannel: %v", err)
+	}
 	log.Printf("[SCREEN] Reported size: %dx%d", w, h)
 }
 
@@ -90,22 +99,44 @@ func detectResolution() (int, int) {
 // --- Основной запуск ---
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Printf("Connecting to signaling server: %s\n", serverURL)
+	log.Printf("Starting agent and connecting to signaling server: %s\n", serverURL)
 
+	for i := 0; i < websocketMaxRetries; i++ {
+		log.Printf("Attempt %d of %d to connect to WebSocket server...", i+1, websocketMaxRetries)
+		err := runAgent()
+		if err == nil {
+			log.Println("Agent stopped gracefully.")
+			break // Успешное завершение runAgent, выходим из цикла
+		}
+		log.Printf("Agent encountered an error: %v. Retrying in %v...", err, websocketRetryDelay)
+		time.Sleep(websocketRetryDelay)
+	}
+
+	log.Printf("Exiting after %d failed WebSocket connection attempts.", websocketMaxRetries)
+	os.Exit(1) // Выходим с кодом ошибки, если все попытки провалились
+}
+
+// runAgent содержит основную логику работы агента, включая WebSocket-соединение.
+// Она возвращает nil при чистом закрытии WebSocket или ошибку при его разрыве.
+func runAgent() error {
 	ws, _, err := websocket.DefaultDialer.Dial(serverURL, nil)
 	if err != nil {
-		log.Fatalf("WebSocket connect error: %v", err)
+		return fmt.Errorf("websocket connect error: %w", err)
 	}
 	defer ws.Close()
-	log.Println("Connected")
+	log.Println("Connected to WebSocket server.")
 
 	writeChan := make(chan []byte, 100)
+	// Горутина для отправки сообщений через WebSocket
 	go func() {
 		for msg := range writeChan {
 			err := ws.WriteMessage(websocket.TextMessage, msg)
 			if err != nil {
-				log.Printf("WebSocket write error: %v", err)
-				return // Завершаем горутину, если запись не удалась (например, WS закрыт)
+				log.Printf("WebSocket write error: %v. Stopping write goroutine.", err)
+				// В случае ошибки записи, закрываем канал, чтобы сообщить другим горутинам
+				// о проблеме с WS и не блокироваться на writeChan.
+				// Важно: не закрывать ws здесь, это делает defer в runAgent.
+				return
 			}
 		}
 	}()
@@ -118,7 +149,7 @@ func main() {
 		"video", "rmm",
 	)
 	if err != nil {
-		log.Fatalf("Track create error: %v", err)
+		return fmt.Errorf("track create error: %w", err)
 	}
 
 	// Инициализация глобальных переменных разрешения перед первым запуском FFmpeg
@@ -167,11 +198,15 @@ func main() {
 		}
 	}()
 
+	// Основной цикл чтения сообщений из WebSocket
 	for {
 		_, msg, err := ws.ReadMessage()
 		if err != nil {
-			log.Printf("WebSocket read error: %v", err)
-			break
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Println("WebSocket closed cleanly.")
+				return nil // Чистое закрытие WS, можно не переподключаться
+			}
+			return fmt.Errorf("websocket read error: %w", err) // Ошибка чтения, вызываем переподключение
 		}
 		if handleSDP(msg, writeChan, pcs, &pcsLock, videoTrack) {
 			continue
@@ -441,16 +476,10 @@ func startScreenWatcher(dc *webrtc.DataChannel) {
 			time.Sleep(3 * time.Second)
 
 			// Если activeDataChannel обнулен (соединение разорвано), то, возможно,
-			// нет смысла продолжать наблюдение, пока не будет нового соединения.
-			// Хотя, если хотим, чтобы FFmpeg всегда транслировал правильное разрешение,
-			// то можно и продолжить.
-			if activeDataChannel == nil {
-				// Если DataChannel закрыт, мы можем прекратить наблюдение за экраном
-				// или продолжить, но не отправлять info.
-				// Я решил продолжить, чтобы FFmpeg перезапускался с правильным разрешением,
-				// независимо от наличия активного соединения.
-				// Однако, отправлять screen_info бессмысленно.
-			}
+			// его больше нет, но нам все равно нужно следить за разрешением для FFmpeg
+			// и, возможно, отправить информацию, если DataChannel восстановится.
+			// Здесь код остается без изменений, чтобы продолжать мониторить разрешение,
+			// даже если DataChannel временно недоступен.
 
 			w, h := getPhysicalScreenSize()
 			// Добавим fallback на detectResolution если getPhysicalScreenSize возвращает 0,
@@ -474,14 +503,17 @@ func startScreenWatcher(dc *webrtc.DataChannel) {
 				}
 
 				// Отправляем информацию об изменении разрешения через DataChannel, если он активен.
-				if activeDataChannel != nil {
+				if activeDataChannel != nil { // Проверяем, что activeDataChannel все еще не nil
 					info := map[string]interface{}{
 						"type":   "screen_info",
 						"width":  w,
 						"height": h,
 					}
 					b, _ := json.Marshal(info)
-					_ = dc.SendText(string(b))
+					err := activeDataChannel.SendText(string(b)) // Используем activeDataChannel напрямую
+					if err != nil {
+						log.Printf("[ERROR] Failed to send screen_info via DataChannel: %v", err)
+					}
 					log.Printf("[SCREEN] Sent updated screen_info: %dx%d", w, h)
 				}
 			}
@@ -492,21 +524,41 @@ func startScreenWatcher(dc *webrtc.DataChannel) {
 // parseFFmpegResolution читает stderr FFmpeg и парсит разрешение.
 // Оно завершается, если получает сигнал из канала `quit`.
 func parseFFmpegResolution(r io.Reader, quit <-chan struct{}) {
+	// Увеличиваем размер буфера для сканера, чтобы избежать "token too long"
+	// Стандартный буфер bufio.MaxScanTokenSize = 64 * 1024 (64KB).
+	// FFmpeg может выводить очень длинные строки, поэтому увеличиваем, например, до 1MB.
+	const maxCapacity = 1 * 1920 * 1080 // 1MB
+	buf := make([]byte, maxCapacity)
 	scanner := bufio.NewScanner(r)
+	scanner.Buffer(buf, maxCapacity) // Устанавливаем пользовательский буфер и максимальный размер токена
+
 	for {
 		select {
 		case <-quit:
 			log.Println("[FFmpeg Stderr] Quit signal received, stopping scanner.")
 			return
 		default:
-			// Неблокирующее чтение, но scanner.Scan() блокируется.
-			// Это не проблема, так как quit канал позволяет выйти из блокировки.
 			if !scanner.Scan() {
 				if err := scanner.Err(); err != nil {
-					log.Printf("[FFmpeg Stderr] Scanner error: %v", err)
+					// Проверяем ошибку bufio.ErrTooLong - это та самая ошибка
+					if err == bufio.ErrTooLong {
+						log.Printf("[FFmpeg Stderr] Scanner error: token too long, but continuing. Line might be truncated: %s", scanner.Text())
+						// Несмотря на ошибку, мы можем попытаться продолжить чтение,
+						// если это не приводит к полной блокировке.
+						// Но, поскольку stderr мог быть сброшен, возможно, лучше
+						// просто залогировать и продолжить.
+						// Если эта ошибка повторяется, это означает, что FFmpeg продолжает
+						// выводить очень длинные строки, и мы можем терять информацию.
+						// Однако буфер уже 1MB, так что таких строк должно быть очень мало.
+					} else {
+						log.Printf("[FFmpeg Stderr] Scanner error: %v", err)
+						log.Println("[FFmpeg Stderr] Scanner finished or pipe closed.")
+						return // Действительная ошибка, завершаем горутину
+					}
+				} else {
+					log.Println("[FFmpeg Stderr] Scanner finished or pipe closed.")
+					return
 				}
-				log.Println("[FFmpeg Stderr] Scanner finished or pipe closed.")
-				return
 			}
 			line := scanner.Text()
 			// log.Printf("[FFmpeg Stderr] %s", line) // Для отладки, если нужно видеть весь вывод
@@ -533,7 +585,7 @@ func parseFFmpegResolution(r io.Reader, quit <-chan struct{}) {
 // Оно завершается, если получает сигнал из канала `quit`.
 func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample, quit <-chan struct{}) {
 	reader := bufio.NewReader(r)
-	buf := make([]byte, 0, 1<<16) // Увеличен буфер
+	buf := make([]byte, 0, 1<<32) // Увеличен буфер
 	tmp := make([]byte, 4096)
 	for {
 		select {
@@ -541,6 +593,12 @@ func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample, quit <-
 			log.Println("[FFmpeg Video Stream] Quit signal received, stopping streaming.")
 			return
 		default:
+			// Установка тайм-аута для `reader.Read` для более быстрого реагирования на `quit`
+			// при отсутствии данных в потоке.
+			// Это может быть не всегда оптимально для производительности,
+			// но улучшает отзывчивость при завершении.
+			// Для Read() из Pipe это обычно не проблема, т.к. оно блокируется до появления данных
+			// или закрытия Pipe. Если поток FFmpeg остановлен, Read() вернёт EOF.
 			n, err := reader.Read(tmp)
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
@@ -579,8 +637,10 @@ func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample, quit <-
 // findStartCode находит стартовый код H.264 NALU (00 00 00 01).
 func findStartCode(data []byte) int {
 	for i := 0; i < len(data)-3; i++ {
-		if data[i] == 0 && data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1 {
-			return i
+		if data[i] == 0 { // Проверяем только если первый байт 0
+			if data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1 {
+				return i
+			}
 		}
 	}
 	return -1
@@ -677,7 +737,6 @@ func handleControl(data []byte) {
 			log.Println("[CONTROL] Key event missing 'key' field.")
 			return
 		}
-		// robotgo.KeyTap(key_str) // KeyTap - это down + up
 		robotgo.KeyDown(key_str)
 
 	case "key_up":
