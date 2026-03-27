@@ -1,4 +1,3 @@
-<!-- rmm/templates/index.html -->
 <!doctype html>
 <html lang="en">
   <head>
@@ -44,39 +43,67 @@
       let remoteScreenWidth = 0;
       let remoteScreenHeight = 0;
       let lastMouseMove = 0;
+      const mouseMoveThrottle = 16; //ms, ~60fps
 
-      // блокируем контекстное меню
+      // Блокируем контекстное меню, чтобы правая кнопка мыши передавалась на удалённую сторону
       document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-      // статус
+      // Элементы DOM
       const statusEl = document.getElementById("status");
       const video = document.getElementById("video");
 
+      // --- Helper-функции ---
       function setStatus(msg, color = "#0f0") {
         statusEl.textContent = msg;
         statusEl.style.color = color;
       }
 
+      function sendControl(type, payload) {
+        if (dc && dc.readyState === "open") {
+          try {
+            dc.send(JSON.stringify({ type, ...payload }));
+          } catch (e) {
+            console.error("Failed to send control message:", e);
+          }
+        }
+      }
+
+      function clamp(v, min, max) {
+        return Math.max(min, Math.min(max, v));
+      }
+
+      // --- WebSocket и WebRTC соединения ---
       async function connect() {
         const addr =
           "ws://" + window.location.hostname + ":8000/ws/viewer/agent1";
         ws = new WebSocket(addr);
 
         ws.onopen = async () => {
-          console.log("WS connected");
+          console.log("WebSocket connected to", addr);
           setStatus("Connected");
 
+          if (pc) {
+            pc.close(); // Закрываем предыдущее PeerConnection, если оно есть
+          }
           pc = new RTCPeerConnection({
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
           });
 
+          // Создаем DataChannel для управления
           dc = pc.createDataChannel("control");
           setupDataChannel(dc);
           setupConnection(pc);
 
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          ws.send(JSON.stringify(offer));
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send(JSON.stringify(offer));
+          } catch (err) {
+            console.error("Error creating or sending offer:", err);
+            setStatus("WebRTC Error", "#f00");
+            pc.close();
+            ws.close();
+          }
         };
 
         ws.onmessage = async (e) => {
@@ -88,104 +115,166 @@
               await pc.addIceCandidate(data);
             }
           } catch (err) {
-            console.error(err);
+            console.error("Error parsing or handling WebSocket message:", err);
           }
         };
 
         ws.onclose = () => {
+          console.warn("WebSocket disconnected. Retrying in 2 seconds...");
           setStatus("Reconnecting...", "#f90");
-          console.warn("Disconnected, retrying...");
+          if (pc) {
+            pc.close();
+          } // Закрываем PeerConnection при отключении WS
           setTimeout(connect, 2000);
+        };
+
+        ws.onerror = (err) => {
+          console.error("WebSocket error:", err);
+          setStatus("WS Error", "#f00");
+          ws.close(); // Запустить onclose инициировать переподключение
         };
       }
 
+      // Настройка DataChannel (для управления)
       function setupDataChannel(channel) {
-        channel.onopen = () => setStatus("Ready");
-        channel.onclose = () => setStatus("Disconnected", "#f66");
-        channel.onerror = (e) => console.error("DataChannel error:", e);
+        channel.onopen = () => {
+          setStatus("Ready");
+          console.log("DataChannel 'control' opened.");
+          // Запрашиваем актуальные данные об экране сразу после открытия DC
+          sendControl("request_screen_info", {});
+        };
+        channel.onclose = () => {
+          setStatus("Disconnected", "#f66");
+          console.log("DataChannel 'control' closed.");
+        };
+        channel.onerror = (e) =>
+          console.error("DataChannel 'control' error:", e);
 
         channel.onmessage = (e) => {
           let data;
           try {
             data = JSON.parse(e.data);
-          } catch {
+          } catch (parseErr) {
+            console.warn(
+              "Failed to parse DataChannel message:",
+              parseErr,
+              e.data,
+            );
             return;
           }
+
           if (data.type === "screen_info") {
             remoteScreenWidth = data.width;
             remoteScreenHeight = data.height;
-            console.log("Screen info →", remoteScreenWidth, remoteScreenHeight);
+            console.log(
+              "Received Screen Info:",
+              remoteScreenWidth,
+              "x",
+              remoteScreenHeight,
+            );
+            syncVideoDimensions(); // Обновляем размеры, если они изменились
+          } else {
+            console.log("Unhandled DataChannel message:", data);
           }
         };
       }
 
-      function setupConnection(pc) {
-        pc.ontrack = (e) => {
-          video.srcObject = e.streams[0];
+      // Настройка PeerConnection (для видео)
+      function setupConnection(pcInstance) {
+        pcInstance.ontrack = (e) => {
+          if (video.srcObject !== e.streams[0]) {
+            video.srcObject = e.streams[0];
+            console.log("Received remote stream.");
+          }
         };
-        pc.onicecandidate = (e) => {
-          if (e.candidate) ws.send(JSON.stringify(e.candidate));
+        pcInstance.onicecandidate = (e) => {
+          if (e.candidate) {
+            ws.send(JSON.stringify(e.candidate));
+          }
         };
-        pc.addTransceiver("video", { direction: "recvonly" });
+        pcInstance.onconnectionstatechange = () => {
+          console.log("Peer Connection State:", pcInstance.connectionState);
+          if (
+            pcInstance.connectionState === "failed" ||
+            pcInstance.connectionState === "closed"
+          ) {
+            setStatus("Connection Lost", "#f00");
+            // Не инициируем переподключение здесь, т.к. ws.onclose уже этим занимается.
+            // Если ws сам не отвалился, но WebRTC упал, ws.onclose вызовет connect.
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.close(); // Провоцируем полный перезапуск через WS.onclose
+            }
+          }
+        };
+        pcInstance.addTransceiver("video", { direction: "recvonly" });
       }
 
-      // --- Авто‑синхронизация размеров видео (важно!) ---
+      // --- Автосинхронизация размеров видео ---
+      // Это позволяет использовать фактические размеры видеопотока,
+      // если информация с сервера ещё не пришла или отличается.
       function syncVideoDimensions() {
         if (video.videoWidth && video.videoHeight) {
-          // если сервер не слал размеры, подхватываем реальные кадры
           if (
             !remoteScreenWidth ||
             !remoteScreenHeight ||
-            Math.abs(remoteScreenWidth - video.videoWidth) > 10
+            Math.abs(remoteScreenWidth - video.videoWidth) > 10 ||
+            Math.abs(remoteScreenHeight - video.videoHeight) > 10
           ) {
             remoteScreenWidth = video.videoWidth;
             remoteScreenHeight = video.videoHeight;
             console.log(
-              "Auto‑synced from metadata:",
+              "Auto-synced remote dimensions from video metadata:",
               remoteScreenWidth,
+              "x",
               remoteScreenHeight,
             );
+            // Если размеры изменились, запрашиваем ещё раз, чтобы сервер обновил FFmpeg
+            sendControl("request_screen_info", {});
           }
         }
       }
 
       video.addEventListener("loadedmetadata", syncVideoDimensions);
+      // Используем ResizeObserver для отслеживания изменений в размерах video-элемента
+      // (особенно если он в flexbox/grid), чтобы пересчитывать соотношение.
       new ResizeObserver(syncVideoDimensions).observe(video);
 
-      // --- Управление ---
-      function sendControl(type, payload) {
-        if (dc && dc.readyState === "open") {
-          dc.send(JSON.stringify({ type, ...payload }));
+      // --- Обработка событий мыши ---
+      function mapPointerToRemote(clientX, clientY) {
+        if (remoteScreenWidth <= 0 || remoteScreenHeight <= 0) {
+          console.warn(
+            "Remote screen dimensions not available for mouse mapping.",
+          );
+          return null;
         }
-      }
 
-      function clamp(v, min, max) {
-        return Math.max(min, Math.min(max, v));
-      }
-
-      function mapPointerToRemote(clientX, clientY, rect) {
-        if (remoteScreenWidth <= 0 || remoteScreenHeight <= 0) return null;
-
-        const rectRatio = rect.width / rect.height;
-        const videoRatio = remoteScreenWidth / remoteScreenHeight;
+        const rect = video.getBoundingClientRect();
+        const videoNativeRatio = remoteScreenWidth / remoteScreenHeight;
+        const videoElementRatio = rect.width / rect.height;
 
         let drawWidth,
           drawHeight,
           offsetX = 0,
           offsetY = 0;
-        if (rectRatio > videoRatio) {
+
+        // Определяем, как видео "вписывается" в элемент (object-fit: contain)
+        if (videoElementRatio > videoNativeRatio) {
+          // Элемент шире, чем видео: видео ограничено по высоте
           drawHeight = rect.height;
-          drawWidth = drawHeight * videoRatio;
+          drawWidth = drawHeight * videoNativeRatio;
           offsetX = (rect.width - drawWidth) / 2;
         } else {
+          // Элемент выше, чем видео: видео ограничено по ширине
           drawWidth = rect.width;
-          drawHeight = drawWidth / videoRatio;
+          drawHeight = drawWidth / videoNativeRatio;
           offsetY = (rect.height - drawHeight) / 2;
         }
 
+        // Координаты курсора относительно видеопотока (внутри чёрных полос игнорируем)
         const xInVideo = clientX - rect.left - offsetX;
         const yInVideo = clientY - rect.top - offsetY;
 
+        // Если курсор вне границ отображаемого видео (чёрные полосы), не отправляем
         if (
           xInVideo < 0 ||
           xInVideo > drawWidth ||
@@ -195,45 +284,271 @@
           return null;
         }
 
-        const nx = xInVideo / drawWidth;
-        const ny = yInVideo / drawHeight;
-        const remoteX = Math.round(clamp(nx, 0, 1) * (remoteScreenWidth - 1));
-        const remoteY = Math.round(clamp(ny, 0, 1) * (remoteScreenHeight - 1));
+        // Масштабируем до оригинального разрешения удалённого экрана
+        const remoteX = Math.round(
+          clamp(xInVideo / drawWidth, 0, 1) * remoteScreenWidth,
+        );
+        const remoteY = Math.round(
+          clamp(yInVideo / drawHeight, 0, 1) * remoteScreenHeight,
+        );
+
         return { x: remoteX, y: remoteY };
       }
 
       video.addEventListener("mousemove", (e) => {
         const now = Date.now();
-        if (now - lastMouseMove < 16) return;
+        if (now - lastMouseMove < mouseMoveThrottle) return; // Ограничиваем частоту
         lastMouseMove = now;
-        if (!dc || dc.readyState !== "open") return;
 
-        const rect = video.getBoundingClientRect();
-        const mapped = mapPointerToRemote(e.clientX, e.clientY, rect);
-        if (mapped) sendControl("mouse_move", mapped);
+        const mapped = mapPointerToRemote(e.clientX, e.clientY);
+        if (mapped) {
+          sendControl("mouse_move", mapped);
+        }
       });
 
       ["mousedown", "mouseup"].forEach((evt) =>
         video.addEventListener(evt, (e) => {
+          // e.button: 0=Left, 1=Middle, 2=Right
           sendControl(evt === "mousedown" ? "mouse_down" : "mouse_up", {
             button: e.button,
           });
+          e.preventDefault(); // Предотвращаем дефолтный браузерный клик/контекстное меню
         }),
       );
 
-      ["keydown", "keyup"].forEach((evt) =>
-        window.addEventListener(evt, (e) => {
-          sendControl(evt === "keydown" ? "key_down" : "key_up", {
-            key: e.code,
-          });
-        }),
-      );
+      // --- Обработка событий клавиатуры ---
+      // Эта функция преобразует разные виды `e.code` или `e.key`
+      // в унифицированные строки, которые понимает `robotgo`.
+      function mapKeyEventToRobotKey(e) {
+        // Игнорируем ввод в поля ввода браузера или редактируемые элементы
+        const tagName = e.target.tagName;
+        if (
+          tagName === "INPUT" ||
+          tagName === "TEXTAREA" ||
+          e.target.isContentEditable
+        ) {
+          return null;
+        }
 
-      // --- По клику запрашиваем актуальные размеры ---
-      video.addEventListener("click", () => {
-        sendControl("request_screen_info", {});
+        const code = e.code || ""; // Например "KeyA", "Digit1", "NumpadEnter"
+        const key = e.key || ""; // Например "A", "1", "Enter", " " (пробел)
+
+        // Символы, которые по e.key подходят напрямую (буквы, цифры, базовая пунктуация)
+        // Для robotgo обычно нужна нижний регистр для букв
+        if (
+          key.length === 1 &&
+          key.match(/[a-zA-Z0-9.,\/;'\[\]\\`\-=_+!@#$%^&*()]/)
+        ) {
+          return key.toLowerCase();
+        }
+
+        // --- Специальные клавиши и их маппинг на robotgo ---
+        // (Этот список можно расширять по мере необходимости,
+        // сверяясь с документацией robotgo и поведением вашей ОС)
+        switch (code) {
+          // Основные функциональные клавиши
+          case "Space":
+            return "space";
+          case "Enter":
+            return "enter";
+          case "Backspace":
+            return "backspace";
+          case "Tab":
+            return "tab";
+          case "Escape":
+            return "esc";
+          case "Delete":
+            return "delete";
+          case "Insert":
+            return "insert";
+          case "Home":
+            return "home";
+          case "End":
+            return "end";
+          case "PageUp":
+            return "pageup";
+          case "PageDown":
+            return "pagedown";
+
+          // Стрелки
+          case "ArrowLeft":
+            return "left";
+          case "ArrowRight":
+            return "right";
+          case "ArrowUp":
+            return "up";
+          case "ArrowDown":
+            return "down";
+
+          // Модификаторы (robotgo часто объединяет левый/правый)
+          case "ControlLeft":
+          case "ControlRight":
+            return "ctrl";
+          case "ShiftLeft":
+          case "ShiftRight":
+            return "shift";
+          case "AltLeft":
+          case "AltRight":
+            return "alt";
+          case "MetaLeft": // Windows Key, Command Key (Mac)
+          case "MetaRight":
+            // Здесь может быть нюанс в зависимости от ОС агента.
+            // robotgo может воспринимать "command" (Mac) или "win" (Windows).
+            // Или попробовать "f10" и настроить в robotgo.
+            if (navigator.platform.startsWith("Mac")) {
+              return "command";
+            }
+            return "alt"; // или "control"  или "win"
+          case "CapsLock":
+            return "capslock";
+          case "NumLock":
+            return "numlock";
+          case "ScrollLock":
+            return "scrolllock";
+
+          // Функциональные клавиши
+          case "F1":
+            return "f1";
+          case "F2":
+            return "f2";
+          case "F3":
+            return "f3";
+          case "F4":
+            return "f4";
+          case "F5":
+            return "f5";
+          case "F6":
+            return "f6";
+          case "F7":
+            return "f7";
+          case "F8":
+            return "f8";
+          case "F9":
+            return "f9";
+          case "F10":
+            return "f10";
+          case "F11":
+            return "f11";
+          case "F12":
+            return "f12";
+
+          // Клавиши Numpad
+          case "Numpad0":
+            return "0"; // robotgo обычно берет цифры напрямую
+          case "Numpad1":
+            return "1";
+          case "Numpad2":
+            return "2";
+          case "Numpad3":
+            return "3";
+          case "Numpad4":
+            return "4";
+          case "Numpad5":
+            return "5";
+          case "Numpad6":
+            return "6";
+          case "Numpad7":
+            return "7";
+          case "Numpad8":
+            return "8";
+          case "Numpad9":
+            return "9";
+          case "NumpadDecimal":
+            return "dot"; // или "period"
+          case "NumpadAdd":
+            return "add"; // или "+"
+          case "NumpadSubtract":
+            return "minus"; // или "-"
+          case "NumpadMultiply":
+            return "multiply"; // или "*"
+          case "NumpadDivide":
+            return "divide"; // или "/"
+          case "NumpadEnter":
+            return "enter";
+
+          // Мультимедийные и другие специальные клавиши
+          // (Убедитесь, что robotgo поддерживает эти имена на вашей ОС!)
+          case "MediaTrackNext":
+            return "nexttrack";
+          case "MediaTrackPrevious":
+            return "prevtrack";
+          case "MediaStop":
+            return "stop";
+          case "MediaPlayPause":
+            return "playpause";
+          case "AudioVolumeUp":
+            return "volup";
+          case "AudioVolumeDown":
+            return "voldn";
+          case "AudioVolumeMute":
+            return "mute";
+          case "PrintScreen":
+            return "printscreen";
+          case "Pause":
+            return "pause";
+
+          // Специальные символы на основной клавиатуре, которые не попали в `key.length === 1`
+          case "BracketLeft":
+            return "[";
+          case "BracketRight":
+            return "]";
+          case "Semicolon":
+            return ";";
+          case "Quote":
+            return "'";
+          case "Comma":
+            return ",";
+          case "Period":
+            return ".";
+          case "Slash":
+            return "/";
+          case "Backslash":
+            return "\\";
+          case "Equal":
+            return "=";
+          case "Minus":
+            return "-";
+          case "Backquote":
+            return "`";
+
+          // Прочие, для которых может понадобиться более специфический маппинг
+          default:
+            console.log(`[KEYBOARD] Unmapped key.code: ${code}, e.key: ${key}`);
+            // Можно попробовать использовать 'key' в нижнем регистре как последний шанс,
+            // но для многих спец. клавиш это не сработает
+            const lowerKey = key.toLowerCase();
+            if (lowerKey && lowerKey.length > 0) {
+              return lowerKey;
+            }
+            return null; // Ничего не отправляем, если не нашли маппинг
+        }
+      }
+
+      window.addEventListener("keydown", (e) => {
+        if (!dc || dc.readyState !== "open") return;
+        const robotKey = mapKeyEventToRobotKey(e);
+        if (!robotKey) {
+          return;
+        }
+
+        // Предотвращаем стандартное действие браузера
+        // Это важно для таких клавиш как Tab, Backspace, стрелки, F-клавиши,
+        // чтобы они управляли удаленной системой, а не браузером.
+        e.preventDefault();
+        sendControl("key_down", { key: robotKey });
       });
 
+      window.addEventListener("keyup", (e) => {
+        if (!dc || dc.readyState !== "open") return;
+        const robotKey = mapKeyEventToRobotKey(e);
+        if (!robotKey) {
+          return;
+        }
+        e.preventDefault(); // Тоже предотвращаем, чтобы избежать задержек/фликера
+        sendControl("key_up", { key: robotKey });
+      });
+
+      // --- Инициализация ---
       connect();
     </script>
   </body>
