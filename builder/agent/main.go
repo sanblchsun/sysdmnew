@@ -26,7 +26,7 @@ import (
 
 // --- Конфигурация ---
 const (
-	serverURL           = "ws://192.168.2.191:8000/ws/agent/agent1"
+	serverURL           = "ws://192.168.88.127:8000/ws/agent/agent1"
 	websocketMaxRetries = 5               // Максимальное количество попыток подключения к WebSocket
 	websocketRetryDelay = 5 * time.Second // Задержка между попытками подключения к WebSocket
 )

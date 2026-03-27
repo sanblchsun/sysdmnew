@@ -1,3 +1,4 @@
+<!-- rmm/templates/index.html -->
 <!doctype html>
 <html lang="en">
   <head>
@@ -20,7 +21,7 @@
         display: block;
         object-fit: contain;
         background-color: black;
-        cursor: crosshair; /* курсор при наведении, чтобы видно было */
+        cursor: crosshair;
       }
 
       .status {
@@ -31,12 +32,25 @@
         font-family: monospace;
         font-size: 12px;
       }
+
+      .layout-indicator {
+        position: fixed;
+        right: 10px;
+        bottom: 10px;
+        color: #0f0;
+        font-family: monospace;
+        font-size: 12px;
+        padding: 2px 5px;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 3px;
+      }
     </style>
   </head>
 
   <body>
     <video id="video" autoplay playsinline muted></video>
     <div id="status" class="status">Connecting...</div>
+    <div id="layoutIndicator" class="layout-indicator">EN</div>
 
     <script>
       let pc, ws, dc;
@@ -44,18 +58,66 @@
       let remoteScreenHeight = 0;
       let lastMouseMove = 0;
       const mouseMoveThrottle = 16; //ms, ~60fps
+      let currentLayout = "en"; // 'en' или 'ru'
+      let textBuffer = "";
+      let textBufferTimeout = null;
+      const TEXT_FLUSH_DELAY = 150; // ms
 
-      // Блокируем контекстное меню, чтобы правая кнопка мыши передавалась на удалённую сторону
+      // Кириллица -> латинские клавиши (для русской раскладки)
+      const cyrillicToLatinMap = {
+        й: "q",
+        ц: "w",
+        у: "e",
+        к: "r",
+        е: "t",
+        н: "y",
+        г: "u",
+        ш: "i",
+        щ: "o",
+        з: "p",
+        х: "[",
+        ъ: "]",
+        ф: "a",
+        ы: "s",
+        в: "d",
+        а: "f",
+        п: "g",
+        р: "h",
+        о: "j",
+        л: "k",
+        д: "l",
+        ж: ";",
+        э: "'",
+        я: "z",
+        ч: "x",
+        с: "c",
+        м: "v",
+        и: "b",
+        т: "n",
+        ь: "m",
+        б: ",",
+        ю: ".",
+        "/": "/",
+        ё: "`",
+        Ё: "~",
+      };
+
+      // Блокируем контекстное меню
       document.addEventListener("contextmenu", (e) => e.preventDefault());
 
       // Элементы DOM
       const statusEl = document.getElementById("status");
       const video = document.getElementById("video");
+      const layoutIndicator = document.getElementById("layoutIndicator");
 
       // --- Helper-функции ---
       function setStatus(msg, color = "#0f0") {
         statusEl.textContent = msg;
         statusEl.style.color = color;
+      }
+
+      function updateLayoutIndicator() {
+        layoutIndicator.textContent = currentLayout === "ru" ? "RU" : "EN";
       }
 
       function sendControl(type, payload) {
@@ -72,6 +134,175 @@
         return Math.max(min, Math.min(max, v));
       }
 
+      function flushTextBuffer() {
+        if (textBuffer.length > 0) {
+          console.log("[KEYBOARD] Sending buffered text:", textBuffer);
+          sendControl("type_string_input", { text: textBuffer });
+          textBuffer = "";
+        }
+        if (textBufferTimeout) {
+          clearTimeout(textBufferTimeout);
+          textBufferTimeout = null;
+        }
+      }
+
+      function isPrintableKey(e) {
+        return (
+          e.key.length === 1 &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          !e.metaKey &&
+          (e.key !== " " || e.code === "Space")
+        );
+      }
+
+      function mapKeyEventToRobotKey(e) {
+        const tagName = e.target.tagName;
+        if (
+          tagName === "INPUT" ||
+          tagName === "TEXTAREA" ||
+          e.target.isContentEditable
+        ) {
+          return null;
+        }
+
+        const code = e.code || "";
+        const key = e.key || "";
+
+        // Специальная обработка для пробела
+        if (e.code === "Space") return "space";
+
+        switch (code) {
+          case "Enter":
+            return "enter";
+          case "Backspace":
+            return "backspace";
+          case "Tab":
+            return "tab";
+          case "Escape":
+            return "esc";
+          case "Delete":
+            return "delete";
+          case "Insert":
+            return "insert";
+          case "Home":
+            return "home";
+          case "End":
+            return "end";
+          case "PageUp":
+            return "pageup";
+          case "PageDown":
+            return "pagedown";
+          case "ArrowLeft":
+            return "left";
+          case "ArrowRight":
+            return "right";
+          case "ArrowUp":
+            return "up";
+          case "ArrowDown":
+            return "down";
+          case "ControlLeft":
+          case "ControlRight":
+            return "ctrl";
+          case "ShiftLeft":
+          case "ShiftRight":
+            return "shift";
+          case "AltLeft":
+          case "AltRight":
+            return "alt";
+          case "MetaLeft":
+          case "MetaRight":
+            return navigator.platform.startsWith("Mac") ? "command" : "win";
+          case "CapsLock":
+            return "capslock";
+          case "NumLock":
+            return "numlock";
+          case "ScrollLock":
+            return "scrolllock";
+          case "F1":
+            return "f1";
+          case "F2":
+            return "f2";
+          case "F3":
+            return "f3";
+          case "F4":
+            return "f4";
+          case "F5":
+            return "f5";
+          case "F6":
+            return "f6";
+          case "F7":
+            return "f7";
+          case "F8":
+            return "f8";
+          case "F9":
+            return "f9";
+          case "F10":
+            return "f10";
+          case "F11":
+            return "f11";
+          case "F12":
+            return "f12";
+          case "Numpad0":
+            return "0";
+          case "Numpad1":
+            return "1";
+          case "Numpad2":
+            return "2";
+          case "Numpad3":
+            return "3";
+          case "Numpad4":
+            return "4";
+          case "Numpad5":
+            return "5";
+          case "Numpad6":
+            return "6";
+          case "Numpad7":
+            return "7";
+          case "Numpad8":
+            return "8";
+          case "Numpad9":
+            return "9";
+          case "NumpadDecimal":
+            return "period";
+          case "NumpadAdd":
+            return "add";
+          case "NumpadSubtract":
+            return "minus";
+          case "NumpadMultiply":
+            return "multiply";
+          case "NumpadDivide":
+            return "divide";
+          case "NumpadEnter":
+            return "enter";
+          case "BracketLeft":
+            return "[";
+          case "BracketRight":
+            return "]";
+          case "Semicolon":
+            return ";";
+          case "Quote":
+            return "'";
+          case "Comma":
+            return ",";
+          case "Period":
+            return ".";
+          case "Slash":
+            return "/";
+          case "Backslash":
+            return "\\";
+          case "Equal":
+            return "=";
+          case "Minus":
+            return "-";
+          case "Backquote":
+            return "`";
+          default:
+            console.log(`[KEYBOARD] Unmapped key.code: ${code}, e.key: ${key}`);
+            return null;
+        }
+      }
+
       // --- WebSocket и WebRTC соединения ---
       async function connect() {
         const addr =
@@ -83,13 +314,12 @@
           setStatus("Connected");
 
           if (pc) {
-            pc.close(); // Закрываем предыдущее PeerConnection, если оно есть
+            pc.close();
           }
           pc = new RTCPeerConnection({
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
           });
 
-          // Создаем DataChannel для управления
           dc = pc.createDataChannel("control");
           setupDataChannel(dc);
           setupConnection(pc);
@@ -124,28 +354,27 @@
           setStatus("Reconnecting...", "#f90");
           if (pc) {
             pc.close();
-          } // Закрываем PeerConnection при отключении WS
+          }
           setTimeout(connect, 2000);
         };
 
         ws.onerror = (err) => {
           console.error("WebSocket error:", err);
           setStatus("WS Error", "#f00");
-          ws.close(); // Запустить onclose инициировать переподключение
+          ws.close();
         };
       }
 
-      // Настройка DataChannel (для управления)
       function setupDataChannel(channel) {
         channel.onopen = () => {
           setStatus("Ready");
           console.log("DataChannel 'control' opened.");
-          // Запрашиваем актуальные данные об экране сразу после открытия DC
           sendControl("request_screen_info", {});
         };
         channel.onclose = () => {
           setStatus("Disconnected", "#f66");
           console.log("DataChannel 'control' closed.");
+          flushTextBuffer(true);
         };
         channel.onerror = (e) =>
           console.error("DataChannel 'control' error:", e);
@@ -172,14 +401,11 @@
               "x",
               remoteScreenHeight,
             );
-            syncVideoDimensions(); // Обновляем размеры, если они изменились
-          } else {
-            console.log("Unhandled DataChannel message:", data);
+            syncVideoDimensions();
           }
         };
       }
 
-      // Настройка PeerConnection (для видео)
       function setupConnection(pcInstance) {
         pcInstance.ontrack = (e) => {
           if (video.srcObject !== e.streams[0]) {
@@ -199,19 +425,14 @@
             pcInstance.connectionState === "closed"
           ) {
             setStatus("Connection Lost", "#f00");
-            // Не инициируем переподключение здесь, т.к. ws.onclose уже этим занимается.
-            // Если ws сам не отвалился, но WebRTC упал, ws.onclose вызовет connect.
             if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.close(); // Провоцируем полный перезапуск через WS.onclose
+              ws.close();
             }
           }
         };
         pcInstance.addTransceiver("video", { direction: "recvonly" });
       }
 
-      // --- Автосинхронизация размеров видео ---
-      // Это позволяет использовать фактические размеры видеопотока,
-      // если информация с сервера ещё не пришла или отличается.
       function syncVideoDimensions() {
         if (video.videoWidth && video.videoHeight) {
           if (
@@ -223,23 +444,19 @@
             remoteScreenWidth = video.videoWidth;
             remoteScreenHeight = video.videoHeight;
             console.log(
-              "Auto-synced remote dimensions from video metadata:",
+              "Auto-synced remote dimensions:",
               remoteScreenWidth,
               "x",
               remoteScreenHeight,
             );
-            // Если размеры изменились, запрашиваем ещё раз, чтобы сервер обновил FFmpeg
             sendControl("request_screen_info", {});
           }
         }
       }
 
       video.addEventListener("loadedmetadata", syncVideoDimensions);
-      // Используем ResizeObserver для отслеживания изменений в размерах video-элемента
-      // (особенно если он в flexbox/grid), чтобы пересчитывать соотношение.
       new ResizeObserver(syncVideoDimensions).observe(video);
 
-      // --- Обработка событий мыши ---
       function mapPointerToRemote(clientX, clientY) {
         if (remoteScreenWidth <= 0 || remoteScreenHeight <= 0) {
           console.warn(
@@ -257,24 +474,19 @@
           offsetX = 0,
           offsetY = 0;
 
-        // Определяем, как видео "вписывается" в элемент (object-fit: contain)
         if (videoElementRatio > videoNativeRatio) {
-          // Элемент шире, чем видео: видео ограничено по высоте
           drawHeight = rect.height;
           drawWidth = drawHeight * videoNativeRatio;
           offsetX = (rect.width - drawWidth) / 2;
         } else {
-          // Элемент выше, чем видео: видео ограничено по ширине
           drawWidth = rect.width;
           drawHeight = drawWidth / videoNativeRatio;
           offsetY = (rect.height - drawHeight) / 2;
         }
 
-        // Координаты курсора относительно видеопотока (внутри чёрных полос игнорируем)
         const xInVideo = clientX - rect.left - offsetX;
         const yInVideo = clientY - rect.top - offsetY;
 
-        // Если курсор вне границ отображаемого видео (чёрные полосы), не отправляем
         if (
           xInVideo < 0 ||
           xInVideo > drawWidth ||
@@ -284,7 +496,6 @@
           return null;
         }
 
-        // Масштабируем до оригинального разрешения удалённого экрана
         const remoteX = Math.round(
           clamp(xInVideo / drawWidth, 0, 1) * remoteScreenWidth,
         );
@@ -297,7 +508,7 @@
 
       video.addEventListener("mousemove", (e) => {
         const now = Date.now();
-        if (now - lastMouseMove < mouseMoveThrottle) return; // Ограничиваем частоту
+        if (now - lastMouseMove < mouseMoveThrottle) return;
         lastMouseMove = now;
 
         const mapped = mapPointerToRemote(e.clientX, e.clientY);
@@ -308,247 +519,85 @@
 
       ["mousedown", "mouseup"].forEach((evt) =>
         video.addEventListener(evt, (e) => {
-          // e.button: 0=Left, 1=Middle, 2=Right
           sendControl(evt === "mousedown" ? "mouse_down" : "mouse_up", {
             button: e.button,
           });
-          e.preventDefault(); // Предотвращаем дефолтный браузерный клик/контекстное меню
+          e.preventDefault();
         }),
       );
 
-      // --- Обработка событий клавиатуры ---
-      // Эта функция преобразует разные виды `e.code` или `e.key`
-      // в унифицированные строки, которые понимает `robotgo`.
-      function mapKeyEventToRobotKey(e) {
-        // Игнорируем ввод в поля ввода браузера или редактируемые элементы
-        const tagName = e.target.tagName;
-        if (
-          tagName === "INPUT" ||
-          tagName === "TEXTAREA" ||
-          e.target.isContentEditable
-        ) {
-          return null;
-        }
-
-        const code = e.code || ""; // Например "KeyA", "Digit1", "NumpadEnter"
-        const key = e.key || ""; // Например "A", "1", "Enter", " " (пробел)
-
-        // Символы, которые по e.key подходят напрямую (буквы, цифры, базовая пунктуация)
-        // Для robotgo обычно нужна нижний регистр для букв
-        if (
-          key.length === 1 &&
-          key.match(/[a-zA-Z0-9.,\/;'\[\]\\`\-=_+!@#$%^&*()]/)
-        ) {
-          return key.toLowerCase();
-        }
-
-        // --- Специальные клавиши и их маппинг на robotgo ---
-        // (Этот список можно расширять по мере необходимости,
-        // сверяясь с документацией robotgo и поведением вашей ОС)
-        switch (code) {
-          // Основные функциональные клавиши
-          case "Space":
-            return "space";
-          case "Enter":
-            return "enter";
-          case "Backspace":
-            return "backspace";
-          case "Tab":
-            return "tab";
-          case "Escape":
-            return "esc";
-          case "Delete":
-            return "delete";
-          case "Insert":
-            return "insert";
-          case "Home":
-            return "home";
-          case "End":
-            return "end";
-          case "PageUp":
-            return "pageup";
-          case "PageDown":
-            return "pagedown";
-
-          // Стрелки
-          case "ArrowLeft":
-            return "left";
-          case "ArrowRight":
-            return "right";
-          case "ArrowUp":
-            return "up";
-          case "ArrowDown":
-            return "down";
-
-          // Модификаторы (robotgo часто объединяет левый/правый)
-          case "ControlLeft":
-          case "ControlRight":
-            return "ctrl";
-          case "ShiftLeft":
-          case "ShiftRight":
-            return "shift";
-          case "AltLeft":
-          case "AltRight":
-            return "alt";
-          case "MetaLeft": // Windows Key, Command Key (Mac)
-          case "MetaRight":
-            // Здесь может быть нюанс в зависимости от ОС агента.
-            // robotgo может воспринимать "command" (Mac) или "win" (Windows).
-            // Или попробовать "f10" и настроить в robotgo.
-            if (navigator.platform.startsWith("Mac")) {
-              return "command";
-            }
-            return "alt"; // или "control"  или "win"
-          case "CapsLock":
-            return "capslock";
-          case "NumLock":
-            return "numlock";
-          case "ScrollLock":
-            return "scrolllock";
-
-          // Функциональные клавиши
-          case "F1":
-            return "f1";
-          case "F2":
-            return "f2";
-          case "F3":
-            return "f3";
-          case "F4":
-            return "f4";
-          case "F5":
-            return "f5";
-          case "F6":
-            return "f6";
-          case "F7":
-            return "f7";
-          case "F8":
-            return "f8";
-          case "F9":
-            return "f9";
-          case "F10":
-            return "f10";
-          case "F11":
-            return "f11";
-          case "F12":
-            return "f12";
-
-          // Клавиши Numpad
-          case "Numpad0":
-            return "0"; // robotgo обычно берет цифры напрямую
-          case "Numpad1":
-            return "1";
-          case "Numpad2":
-            return "2";
-          case "Numpad3":
-            return "3";
-          case "Numpad4":
-            return "4";
-          case "Numpad5":
-            return "5";
-          case "Numpad6":
-            return "6";
-          case "Numpad7":
-            return "7";
-          case "Numpad8":
-            return "8";
-          case "Numpad9":
-            return "9";
-          case "NumpadDecimal":
-            return "dot"; // или "period"
-          case "NumpadAdd":
-            return "add"; // или "+"
-          case "NumpadSubtract":
-            return "minus"; // или "-"
-          case "NumpadMultiply":
-            return "multiply"; // или "*"
-          case "NumpadDivide":
-            return "divide"; // или "/"
-          case "NumpadEnter":
-            return "enter";
-
-          // Мультимедийные и другие специальные клавиши
-          // (Убедитесь, что robotgo поддерживает эти имена на вашей ОС!)
-          case "MediaTrackNext":
-            return "nexttrack";
-          case "MediaTrackPrevious":
-            return "prevtrack";
-          case "MediaStop":
-            return "stop";
-          case "MediaPlayPause":
-            return "playpause";
-          case "AudioVolumeUp":
-            return "volup";
-          case "AudioVolumeDown":
-            return "voldn";
-          case "AudioVolumeMute":
-            return "mute";
-          case "PrintScreen":
-            return "printscreen";
-          case "Pause":
-            return "pause";
-
-          // Специальные символы на основной клавиатуре, которые не попали в `key.length === 1`
-          case "BracketLeft":
-            return "[";
-          case "BracketRight":
-            return "]";
-          case "Semicolon":
-            return ";";
-          case "Quote":
-            return "'";
-          case "Comma":
-            return ",";
-          case "Period":
-            return ".";
-          case "Slash":
-            return "/";
-          case "Backslash":
-            return "\\";
-          case "Equal":
-            return "=";
-          case "Minus":
-            return "-";
-          case "Backquote":
-            return "`";
-
-          // Прочие, для которых может понадобиться более специфический маппинг
-          default:
-            console.log(`[KEYBOARD] Unmapped key.code: ${code}, e.key: ${key}`);
-            // Можно попробовать использовать 'key' в нижнем регистре как последний шанс,
-            // но для многих спец. клавиш это не сработает
-            const lowerKey = key.toLowerCase();
-            if (lowerKey && lowerKey.length > 0) {
-              return lowerKey;
-            }
-            return null; // Ничего не отправляем, если не нашли маппинг
-        }
-      }
-
+      // Обработка событий клавиатуры
       window.addEventListener("keydown", (e) => {
         if (!dc || dc.readyState !== "open") return;
-        const robotKey = mapKeyEventToRobotKey(e);
-        if (!robotKey) {
+
+        // Если это печатаемый символ
+        if (isPrintableKey(e) && e.key.length === 1) {
+          let latKey = e.key;
+
+          // Преобразуем кириллические символы в латинские
+          if (/[а-яёА-ЯЁ]/.test(latKey)) {
+            latKey = cyrillicToLatinMap[latKey.toLowerCase()] || latKey;
+          }
+
+          // Отправляем нажатие клавиши
+          sendControl("key_down", { key: latKey });
+          e.preventDefault();
           return;
         }
 
-        // Предотвращаем стандартное действие браузера
-        // Это важно для таких клавиш как Tab, Backspace, стрелки, F-клавиши,
-        // чтобы они управляли удаленной системой, а не браузером.
-        e.preventDefault();
-        sendControl("key_down", { key: robotKey });
+        // Обработка специальных клавиш
+        flushTextBuffer(); // отправляем буферизированный текст
+
+        const robotKey = mapKeyEventToRobotKey(e);
+        if (robotKey) {
+          e.preventDefault();
+          sendControl("key_down", { key: robotKey });
+        } else {
+          e.preventDefault();
+        }
       });
 
       window.addEventListener("keyup", (e) => {
         if (!dc || dc.readyState !== "open") return;
-        const robotKey = mapKeyEventToRobotKey(e);
-        if (!robotKey) {
+
+        // Для кириллических символов, отправляем key_up соответствующей латинской клавиши
+        if (
+          isPrintableKey(e) &&
+          e.key.length === 1 &&
+          /[а-яёА-ЯЁ]/.test(e.key)
+        ) {
+          const latKey = cyrillicToLatinMap[e.key.toLowerCase()] || e.key;
+          sendControl("key_up", { key: latKey });
+          e.preventDefault();
           return;
         }
-        e.preventDefault(); // Тоже предотвращаем, чтобы избежать задержек/фликера
-        sendControl("key_up", { key: robotKey });
+
+        // На остальные клавиши
+        const robotKey = mapKeyEventToRobotKey(e);
+        if (robotKey) {
+          e.preventDefault();
+          sendControl("key_up", { key: robotKey });
+        } else {
+          e.preventDefault();
+        }
       });
 
-      // --- Инициализация ---
+      // Обработчик для потери фокуса, чтобы сбрасывать буфер
+      window.addEventListener("blur", () => {
+        flushTextBuffer();
+      });
+
+      // Переключение раскладки по Ctrl+Shift
+      window.addEventListener("keydown", (e) => {
+        if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
+          currentLayout = currentLayout === "ru" ? "en" : "ru";
+          updateLayoutIndicator();
+          e.preventDefault();
+        }
+      });
+
+      // Инициализация
+      updateLayoutIndicator();
       connect();
     </script>
   </body>
