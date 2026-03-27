@@ -47,11 +47,30 @@ async def agent_ws(ws: WebSocket, agent_id: str):
 
     try:
         while True:
-            data = await ws.receive_text()
+            try:
+                data = await ws.receive_text()
+            except (
+                RuntimeError
+            ) as e:  # Например, если сокет неожиданно закрылся без WebSocketDisconnect
+                logger.error(f"Error receiving from {agent_id}: {e}")
+                break  # Выйти из цикла, закрыть сокет
+            except Exception as e:
+                logger.exception(f"Unexpected error receiving from {agent_id}: {e}")
+                continue  # Попробовать снова получить, если это не фатально
             # Route messages from agent to its viewer if exists
             viewer = agents.get(f"viewer:{agent_id}")
             if viewer:
-                await viewer.send_text(data)
+                try:
+                    await viewer.send_text(data)
+                except RuntimeError as e:
+                    logger.error(f"Error sending to viewer:{agent_id}: {e}")
+                    # Может быть, пометить viewer как неактивный или удалить его
+                    agents.pop(f"viewer:{agent_id}", None)
+                    # Продолжить получать от агента, если зритель просто отвалился
+                except Exception as e:
+                    logger.exception(
+                        f"Unexpected error sending to viewer:{agent_id}: {e}"
+                    )
     except WebSocketDisconnect:
         logger.info(f"Agent disconnected: {agent_id}")
     except Exception as e:

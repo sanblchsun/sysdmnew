@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os" // Добавлен для os.Exit
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -26,7 +26,7 @@ import (
 
 // --- Конфигурация ---
 const (
-	serverURL           = "ws://192.168.88.127:8000/ws/agent/agent1"
+	serverURL           = "ws://192.168.2.191:8000/ws/agent/agent1"
 	websocketMaxRetries = 5               // Максимальное количество попыток подключения к WebSocket
 	websocketRetryDelay = 5 * time.Second // Задержка между попытками подключения к WebSocket
 )
@@ -56,11 +56,12 @@ func sendScreenInfo(dc *webrtc.DataChannel) {
 	if w == 0 || h == 0 {
 		w, h = detectResolution()
 	}
-	actualScreenWidth, actualScreenHeight = w, h // Обновляем глобальные переменные
+	// Важно: actualScreenWidth и actualScreenHeight уже обновлены в других местах (init, screen watcher, ffmpeg parser).
+	// Здесь мы просто отправляем текущие значения.
 	info := map[string]interface{}{
 		"type":   "screen_info",
-		"width":  w,
-		"height": h,
+		"width":  w, // Используем фактически найденные размеры
+		"height": h, // Используем фактически найденные размеры
 	}
 	b, _ := json.Marshal(info)
 	err := dc.SendText(string(b))
@@ -163,6 +164,9 @@ func runAgent() error {
 	// Запускаем горутину, которая управляет жизненным циклом FFmpeg
 	go manageFFmpegProcess(videoTrack)
 
+	// Запускаем горутину, которая следит за разрешением экрана
+	startScreenWatcher() // Теперь без DataChannel, следит только за изменением разрешения и сигнализирует FFmpeg
+
 	// Горутина, которая слушает обновления разрешения от FFmpeg
 	go func() {
 		for res := range resolutionUpdates {
@@ -184,7 +188,7 @@ func runAgent() error {
 				log.Println("[FFmpeg] Restart signal already pending, skipping.")
 			}
 
-			// Также сразу отправляем информацию об изменении разрешения через DataChannel
+			// Также сразу отправляем информацию об изменении разрешения через DataChannel, если он активен
 			if activeDataChannel != nil {
 				info := map[string]interface{}{
 					"type":   "screen_info",
@@ -192,7 +196,10 @@ func runAgent() error {
 					"height": res[1],
 				}
 				b, _ := json.Marshal(info)
-				_ = activeDataChannel.SendText(string(b))
+				err := activeDataChannel.SendText(string(b))
+				if err != nil {
+					log.Printf("[ERROR] Failed to send updated screen_info via DataChannel: %v", err)
+				}
 				log.Printf("[FFmpeg] Sent updated screen_info: %dx%d", res[0], res[1])
 			}
 		}
@@ -218,13 +225,22 @@ func runAgent() error {
 // manageFFmpegProcess управляет жизненным циклом процесса FFmpeg.
 // Он запускает FFmpeg, следит за ним и перезапускает по сигналу или при сбое.
 func manageFFmpegProcess(videoTrack *webrtc.TrackLocalStaticSample) {
-	var currentFFmpegCmd *exec.Cmd // Переменная для хранения текущего процесса FFmpeg, управляется этим менеджером
 	for {
 		log.Println("[FFmpeg Manager] Starting new FFmpeg process cycle...")
 
-		// Создаем новый канал для завершения текущего цикла FFmpeg.
-		// Важно, чтобы это был новый канал для каждого "запуска" FFmpeg.
-		currentFFmpegQuitSignal := make(chan struct{}, 1)
+		// Канал для сигнализации горутинам чтения stdout/stderr, что надо завершаться.
+		// Важно: он должен быть создан заново для каждого нового цикла FFmpeg,
+		// чтобы корректно сигнализировать новым горутинам.
+		quitSignal := make(chan struct{})
+
+		ffmpegMutex.Lock()
+		// Прежде чем запускать новый FFmpeg, убедимся, что предыдущий процесс полностью завершен
+		// и его ссылки обнулены. Это дополнительная мера предосторожности.
+		if currentFFmpegCmd != nil && currentFFmpegCmd.Process != nil {
+			log.Println("[FFmpeg Manager] Warning: Previous FFmpeg process still active when starting new cycle. Terminating it.")
+			_ = currentFFmpegCmd.Process.Kill()
+		}
+		ffmpegMutex.Unlock()
 
 		var cmd *exec.Cmd
 		var stdout io.ReadCloser
@@ -243,6 +259,8 @@ func manageFFmpegProcess(videoTrack *webrtc.TrackLocalStaticSample) {
 		if actualScreenWidth > 0 && actualScreenHeight > 0 {
 			args = append(args, "-s", fmt.Sprintf("%dx%d", actualScreenWidth, actualScreenHeight))
 			log.Printf("[FFmpeg Manager] Adding -s %dx%d to FFmpeg command.", actualScreenWidth, actualScreenHeight)
+		} else {
+			log.Println("[FFmpeg Manager] Screen dimensions not yet available, running FFmpeg without explicit -s parameter.")
 		}
 
 		args = append(args,
@@ -254,112 +272,104 @@ func manageFFmpegProcess(videoTrack *webrtc.TrackLocalStaticSample) {
 		log.Printf("[FFmpeg Manager] Executing command: ffmpeg %v", strings.Join(args, " "))
 		cmd = exec.Command("ffmpeg", args...)
 
-		// Сохраняем ссылку на текущий процесс
+		// Сохраняем ссылку на текущий процесс сразу после создания, чтобы он был доступен для остановки
 		ffmpegMutex.Lock()
 		currentFFmpegCmd = cmd
 		ffmpegMutex.Unlock()
 
 		stdout, err = cmd.StdoutPipe()
 		if err != nil {
-			log.Printf("[FFmpeg Manager] FFmpeg stdout pipe error: %v", err)
-			time.Sleep(5 * time.Second) // Пауза перед попыткой перезапуска
-			continue                    // Начать следующий цикл
+			log.Printf("[FFmpeg Manager] FFmpeg stdout pipe error: %v. Restarting in 5s.", err)
+			time.Sleep(5 * time.Second)
+			close(quitSignal) // Закрываем quitSignal для всех, кто мог начать его слушать (маловероятно здесь)
+			continue
 		}
 		stderr, err = cmd.StderrPipe()
 		if err != nil {
-			log.Printf("[FFmpeg Manager] FFmpeg stderr pipe error: %v", err)
-			_ = stdout.Close() // Закрываем, что открыли
+			log.Printf("[FFmpeg Manager] FFmpeg stderr pipe error: %v. Restarting in 5s.", err)
+			_ = stdout.Close()
 			time.Sleep(5 * time.Second)
-			continue // Начать следующий цикл
+			close(quitSignal)
+			continue
 		}
 
 		if err = cmd.Start(); err != nil {
-			log.Printf("[FFmpeg Manager] FFmpeg command start error: %v", err)
+			log.Printf("[FFmpeg Manager] FFmpeg command start error: %v. Restarting in 5s.", err)
 			_ = stdout.Close()
 			_ = stderr.Close()
 			time.Sleep(5 * time.Second)
-			continue // Начать следующий цикл
+			close(quitSignal)
+			continue
 		}
 		log.Println("[FFmpeg Manager] FFmpeg process started successfully.")
 
-		// Запускаем горутины для чтения вывода FFmpeg с новым quit-каналом
 		var wg sync.WaitGroup
 		wg.Add(2) // Одна для stdout (видео), одна для stderr (логи и разрешение)
 
+		// Горутина для парсинга stderr (обнаружение разрешения)
 		go func() {
 			defer wg.Done()
-			parseFFmpegResolution(stderr, currentFFmpegQuitSignal)
+			parseFFmpegResolution(stderr, quitSignal)
 			log.Printf("[FFmpeg Manager] Stderr parser exited.")
 		}()
+
+		// Горутина для стриминга видео (чтение stdout и отправка в WebRTC)
 		go func() {
 			defer wg.Done()
-			streamVideo(stdout, videoTrack, currentFFmpegQuitSignal)
+			streamVideo(stdout, videoTrack, quitSignal)
 			log.Printf("[FFmpeg Manager] Video streamer exited.")
 		}()
 
-		// Дополнительная горутина для ожидания завершения процесса FFmpeg
-		// и сигнализирования об этом.
-		ffmpegWaitDone := make(chan struct{})
+		// Горутина для ожидания завершения процесса FFmpeg.
+		// Как только FFmpeg завершится, она пошлет сигнал завершения всем остальным горутинам
+		// и затем дождется их.
+		ffmpegMonitorDone := make(chan struct{})
 		go func() {
-			defer close(ffmpegWaitDone) // Закрываем канал, когда горутина завершится
-			if err := cmd.Wait(); err != nil {
+			defer close(ffmpegMonitorDone) // Сигнализируем, что монитор FFmpeg завершился
+			err := cmd.Wait()              // Ждем завершения FFmpeg
+			if err != nil {
 				log.Printf("[FFmpeg Manager] FFmpeg process exited with error: %v", err)
 			} else {
 				log.Println("[FFmpeg Manager] FFmpeg process exited normally.")
 			}
-			// Важно: Когда процесс FFmpeg завершился (сам по себе или был убит),
-			// мы должны сообщить горутинам чтения, что им тоже пора завершаться,
-			// если они еще этого не сделали, чтобы избежать блокировок.
-			select {
-			case currentFFmpegQuitSignal <- struct{}{}:
-			default: // Если канал уже пуст или закрыт
-			}
+			// Когда FFmpeg завершился, сигнализируем читающим горутинам, чтобы они тоже завершились.
+			log.Println("[FFmpeg Manager] FFmpeg process finished. Sending quit signal to reader goroutines.")
+			close(quitSignal) // Закрываем канал, чтобы все получатели завершились
 		}()
 
-		// Менеджер ждет либо внешнего сигнала на перезапуск, либо самопроизвольного завершения FFmpeg
+		// Основной менеджер ждет одного из двух событий:
+		// 1. Сигнал на перезапуск от screen watcher / resolutionUpdates.
+		// 2. Штатное или ошибочное завершение FFmpeg (через ffmpegMonitorDone).
 		select {
-		case <-ffmpegRestartSignal: // Получен внешний сигнал на перезапуск
+		case <-ffmpegRestartSignal:
 			log.Println("[FFmpeg Manager] Received external restart signal. Terminating current FFmpeg process.")
-		case <-ffmpegWaitDone: // FFmpeg процесс завершился сам по себе (например, была ошибка или источник закрылся)
-			log.Println("[FFmpeg Manager] FFmpeg process finished its execution. Restarting cycle.")
-			// В этом случае ничего дополнительно останавливать не нужно, он уже завершился
-			// и горутина ffmpegWaitDone уже отработала сигнал currentFFmpegQuitSignal.
-			// Просто ждем завершения дочерних горутин и начинаем новый цикл.
-			wg.Wait()
-			time.Sleep(1 * time.Second) // Даем системе немного времени
-			continue                    // Начинаем новый цикл сразу
-		}
-
-		// Если мы здесь, значит, был получен ffmpegRestartSignal.
-		log.Println("[FFmpeg Manager] Sending quit signal to reader goroutines for current FFmpeg.")
-		select {
-		case currentFFmpegQuitSignal <- struct{}{}:
-			// Сигнал отправлен.
-		default:
-			log.Println("[FFmpeg Manager] currentFFmpegQuitSignal was blocked/closed, readers might be already finishing.")
-		}
-
-		// Теперь пытаемся корректно завершить сам процесс FFmpeg.
-		// Используем currentFFmpegCmd, который был установлен для этого цикла.
-		ffmpegMutex.Lock()
-		if currentFFmpegCmd != nil && currentFFmpegCmd.Process != nil {
-			log.Println("[FFmpeg Manager] Sending SIGTERM to FFmpeg process...")
-			err := currentFFmpegCmd.Process.Signal(syscall.SIGTERM) // Отправляем SIGTERM для корректного завершения
-			if err != nil {
-				log.Printf("[FFmpeg Manager] Failed to send SIGTERM to FFmpeg: %v. Trying Kill.", err)
-				_ = currentFFmpegCmd.Process.Kill() // Если SIGTERM не сработал, принудительно убиваем
+			// Если мы получили сигнал на перезапуск, нам нужно "убить" текущий процесс FFmpeg.
+			// Горутина ffmpegMonitorDone обнаружит это завершение и сама отправит quitSignal.
+			ffmpegMutex.Lock()
+			if cmd != nil && cmd.Process != nil {
+				log.Println("[FFmpeg Manager] Sending SIGTERM to FFmpeg process...")
+				if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+					log.Printf("[FFmpeg Manager] Failed to send SIGTERM to FFmpeg: %v. Trying Kill.", err)
+					_ = cmd.Process.Kill() // Принудительное убийство
+				}
 			}
+			ffmpegMutex.Unlock()
+		case <-ffmpegMonitorDone:
+			log.Println("[FFmpeg Manager] FFmpeg process completed its lifecycle (exited or errored). Moving to next cycle.")
+			// В этом случае quitSignal уже был отправлен горутиной ffmpegMonitorDone.
 		}
-		ffmpegMutex.Unlock()
 
-		// Ждем, пока все дочерние горутины и сам процесс FFmpeg завершатся.
-		// Это гарантирует, что ресурсы будут освобождены перед следующим запуском.
-		wg.Wait()        // Ждем, пока горутины чтения завершатся
-		<-ffmpegWaitDone // Ждем, пока горутина, ожидающая завершения FFmpeg, завершится
+		// Ждем, пока все дочерние горутины, связанные с этим циклом FFmpeg, завершатся.
+		wg.Wait()
+		<-ffmpegMonitorDone // Удостоверяемся, что горутина-монитор FFmpeg также завершилась.
 		log.Println("[FFmpeg Manager] All components of previous FFmpeg cycle stopped. Preparing for next run.")
 		time.Sleep(1 * time.Second) // Небольшая пауза перед следующим запуском
 	}
 }
+
+// currentFFmpegCmd хранит ссылку на последний запущенный `ffmpeg.Cmd`.
+// Доступ к нему должен быть синхронизирован через `ffmpegMutex`.
+var currentFFmpegCmd *exec.Cmd
 
 // --- SDP/ICE ---
 func handleSDP(msg []byte, out chan []byte, pcs map[string]*webrtc.PeerConnection,
@@ -412,22 +422,43 @@ func newPeerConnection(out chan []byte,
 		log.Printf("AddTrack error: %v", err)
 	}
 
+	// <<< ИСПРАВЛЕНИЕ: Мы должны установить обработчик активного DataChannel здесь,
+	// но также сохранить обработчик OnDataChannel, если удаленный пир захочет создать свой.
+	// В данном случае, мы хотим, чтобы агент ИНИЦИИРОВАЛ DataChannel "control".
+	// Поэтому, после AddTrack, мы его создаем и устанавливаем его обработчики.
+	// dc, err := pc.CreateDataChannel("control", nil) // Агент создает DataChannel "control"
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to create data channel: %w", err)
+	// }
+
+	// // Устанавливаем обработчики для DataChannel, который мы ТОЛЬКО ЧТО СОЗДАЛИ
+	// dc.OnOpen(func() {
+	// 	log.Println("DataChannel opened")
+	// 	activeDataChannel = dc // Обновляем глобальную переменную activeDataChannel
+	// 	sendScreenInfo(dc)
+	// })
+	// dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+	// 	handleControl(msg.Data)
+	// })
+	// dc.OnClose(func() {
+	// 	log.Println("DataChannel closed")
+	// 	// При закрытии этого DataChannel, обнуляем активный канал.
+	// 	activeDataChannel = nil
+	// })
+
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		activeDataChannel = dc
 		dc.OnOpen(func() {
 			log.Println("DataChannel opened")
 			sendScreenInfo(dc)
-			startScreenWatcher(dc)
+			startScreenWatcher()
 		})
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 			handleControl(msg.Data)
 		})
 		dc.OnClose(func() {
 			log.Println("DataChannel closed")
-			// При закрытии DataChannel, может потребоваться остановить screen watcher,
-			// чтобы не отправлять данные в недействующий канал.
-			// Пока оставим рабочим, чтобы он мог отправить сигналы на перезапуск FFmpeg
-			// даже без активного DC.
+			activeDataChannel = nil
 		})
 	})
 
@@ -469,17 +500,14 @@ func handleICE(msg []byte, pcs map[string]*webrtc.PeerConnection, lock *sync.Mut
 }
 
 // startScreenWatcher периодически проверяет изменение размеров экрана и сигнализирует о перезапуске FFmpeg.
-func startScreenWatcher(dc *webrtc.DataChannel) {
+// Оно больше не принимает DataChannel.
+func startScreenWatcher() {
 	go func() {
+		// Используем локальные переменные для отслеживания текущего состояния экрана
+		//, чтобы не зависеть от активного DataChannel.
 		prevW, prevH := actualScreenWidth, actualScreenHeight
 		for {
 			time.Sleep(3 * time.Second)
-
-			// Если activeDataChannel обнулен (соединение разорвано), то, возможно,
-			// его больше нет, но нам все равно нужно следить за разрешением для FFmpeg
-			// и, возможно, отправить информацию, если DataChannel восстановится.
-			// Здесь код остается без изменений, чтобы продолжать мониторить разрешение,
-			// даже если DataChannel временно недоступен.
 
 			w, h := getPhysicalScreenSize()
 			// Добавим fallback на detectResolution если getPhysicalScreenSize возвращает 0,
@@ -491,7 +519,8 @@ func startScreenWatcher(dc *webrtc.DataChannel) {
 			if w != prevW || h != prevH {
 				log.Printf("[SCREEN] Detected screen size change: %dx%d -> %dx%d.", prevW, prevH, w, h)
 				prevW, prevH = w, h
-				actualScreenWidth, actualScreenHeight = w, h // Обновляем глобальные переменные
+				// Обновляем глобальные переменные, которые используются FFmpeg
+				actualScreenWidth, actualScreenHeight = w, h
 
 				// Отправляем сигнал на перезапуск FFmpeg
 				select {
@@ -502,15 +531,15 @@ func startScreenWatcher(dc *webrtc.DataChannel) {
 					log.Println("[SCREEN] Restart signal already pending from screen watcher, skipping.")
 				}
 
-				// Отправляем информацию об изменении разрешения через DataChannel, если он активен.
-				if activeDataChannel != nil { // Проверяем, что activeDataChannel все еще не nil
+				// Если DataChannel активен, отправляем ему информацию об изменении разрешения.
+				if activeDataChannel != nil {
 					info := map[string]interface{}{
 						"type":   "screen_info",
 						"width":  w,
 						"height": h,
 					}
 					b, _ := json.Marshal(info)
-					err := activeDataChannel.SendText(string(b)) // Используем activeDataChannel напрямую
+					err := activeDataChannel.SendText(string(b))
 					if err != nil {
 						log.Printf("[ERROR] Failed to send screen_info via DataChannel: %v", err)
 					}
@@ -524,13 +553,10 @@ func startScreenWatcher(dc *webrtc.DataChannel) {
 // parseFFmpegResolution читает stderr FFmpeg и парсит разрешение.
 // Оно завершается, если получает сигнал из канала `quit`.
 func parseFFmpegResolution(r io.Reader, quit <-chan struct{}) {
-	// Увеличиваем размер буфера для сканера, чтобы избежать "token too long"
-	// Стандартный буфер bufio.MaxScanTokenSize = 64 * 1024 (64KB).
-	// FFmpeg может выводить очень длинные строки, поэтому увеличиваем, например, до 1MB.
-	const maxCapacity = 1 * 1920 * 1080 // 1MB
+	const maxCapacity = 1 * 1024 * 1024 // 1MB
 	buf := make([]byte, maxCapacity)
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(buf, maxCapacity) // Устанавливаем пользовательский буфер и максимальный размер токена
+	scanner.Buffer(buf, maxCapacity)
 
 	for {
 		select {
@@ -540,20 +566,12 @@ func parseFFmpegResolution(r io.Reader, quit <-chan struct{}) {
 		default:
 			if !scanner.Scan() {
 				if err := scanner.Err(); err != nil {
-					// Проверяем ошибку bufio.ErrTooLong - это та самая ошибка
 					if err == bufio.ErrTooLong {
-						log.Printf("[FFmpeg Stderr] Scanner error: token too long, but continuing. Line might be truncated: %s", scanner.Text())
-						// Несмотря на ошибку, мы можем попытаться продолжить чтение,
-						// если это не приводит к полной блокировке.
-						// Но, поскольку stderr мог быть сброшен, возможно, лучше
-						// просто залогировать и продолжить.
-						// Если эта ошибка повторяется, это означает, что FFmpeg продолжает
-						// выводить очень длинные строки, и мы можем терять информацию.
-						// Однако буфер уже 1MB, так что таких строк должно быть очень мало.
+						log.Printf("[FFmpeg Stderr] Scanner error: token too long, line might be truncated: %s", scanner.Text())
 					} else {
 						log.Printf("[FFmpeg Stderr] Scanner error: %v", err)
 						log.Println("[FFmpeg Stderr] Scanner finished or pipe closed.")
-						return // Действительная ошибка, завершаем горутину
+						return
 					}
 				} else {
 					log.Println("[FFmpeg Stderr] Scanner finished or pipe closed.")
@@ -585,42 +603,56 @@ func parseFFmpegResolution(r io.Reader, quit <-chan struct{}) {
 // Оно завершается, если получает сигнал из канала `quit`.
 func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample, quit <-chan struct{}) {
 	reader := bufio.NewReader(r)
-	buf := make([]byte, 0, 1<<32) // Увеличен буфер
-	tmp := make([]byte, 4096)
+	const maxNALUBufferSize = 2 * 1024 * 1024 // 2MB
+	buf := make([]byte, 0, maxNALUBufferSize)
+
+	tmp := make([]byte, 4096) // Буфер для чтения из io.Reader
 	for {
 		select {
 		case <-quit:
 			log.Println("[FFmpeg Video Stream] Quit signal received, stopping streaming.")
 			return
 		default:
-			// Установка тайм-аута для `reader.Read` для более быстрого реагирования на `quit`
-			// при отсутствии данных в потоке.
-			// Это может быть не всегда оптимально для производительности,
-			// но улучшает отзывчивость при завершении.
-			// Для Read() из Pipe это обычно не проблема, т.к. оно блокируется до появления данных
-			// или закрытия Pipe. Если поток FFmpeg остановлен, Read() вернёт EOF.
 			n, err := reader.Read(tmp)
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
 					log.Printf("[FFmpeg Video Stream] FFmpeg read error: %v", err)
 				}
 				log.Println("[FFmpeg Video Stream] EOF or pipe closed.")
+				return // Завершаем горутину, FFmpeg, вероятно, прекратил работу
+			}
+			// Проверяем, не превысит ли добавление текущих данных максимально допустимый размер буфера.
+			if len(buf)+n > maxNALUBufferSize {
+				log.Printf("[FFmpeg Video Stream] NALU buffer exceeded max capacity (%d bytes). This indicates a problem like missing start codes or corrupted stream. Exiting streamer.", maxNALUBufferSize)
+				// В данном случае, повреждение потока или отсутствие стартовых кодов может привести
+				// к тому, что NALU никогда не будут найдены и буфер будет расти бесконечно.
+				// Лучше дать manageFFmpegProcess перезапустить FFmpeg.
 				return
 			}
 			buf = append(buf, tmp[:n]...)
+
 			for {
 				start := findStartCode(buf)
 				if start == -1 {
-					break
+					break // Неполный NALU, ждем еще данных
 				}
+
 				next := findStartCode(buf[start+4:])
 				if next == -1 {
-					break
+					break // Не нашли следующий стартовый код, ждем
 				}
-				next += start + 4
+				next += start + 4 // Смещаем relative next pointer к абсолютному
+
 				nalu := buf[start:next]
 
-				// Перед отправкой NALU, проверяем, не пришел ли сигнал на завершение
+				// Дополнительная проверка на пустой NALU после findStartCode,
+				// хотя по логике findStartCode(buf[start+4:]) это должно исключать.
+				if len(nalu) == 0 {
+					// Если по какой-то причине NALU оказался пустым, пропускаем его.
+					buf = buf[next:] // Продолжаем поиск в оставшейся части
+					continue
+				}
+
 				select {
 				case <-quit:
 					log.Println("[FFmpeg Video Stream] Quit signal received during NALU processing, stopping.")
@@ -628,7 +660,7 @@ func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample, quit <-
 				default:
 					_ = videoTrack.WriteSample(media.Sample{Data: nalu, Duration: time.Second / 30})
 				}
-				buf = buf[next:]
+				buf = buf[next:] // Обрезаем буфер, оставляя только необработанные данные
 			}
 		}
 	}
@@ -637,10 +669,9 @@ func streamVideo(r io.Reader, videoTrack *webrtc.TrackLocalStaticSample, quit <-
 // findStartCode находит стартовый код H.264 NALU (00 00 00 01).
 func findStartCode(data []byte) int {
 	for i := 0; i < len(data)-3; i++ {
-		if data[i] == 0 { // Проверяем только если первый байт 0
-			if data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1 {
-				return i
-			}
+		// Оптимизация: проверять только если первый байт 0, так как стартовый код начинается с 00 00 00 01
+		if data[i] == 0 && data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1 {
+			return i
 		}
 	}
 	return -1
