@@ -6,7 +6,6 @@ import os
 import logging
 from typing import Dict
 
-# --- Logging improvements ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -15,7 +14,6 @@ logger = logging.getLogger("rmm")
 
 app = FastAPI(title="RMM Signaling Server")
 
-# --- Improved CORS setup ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,23 +22,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Template setup ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-# Store connections for agents and viewers
 agents: Dict[str, WebSocket] = {}
+viewers: Dict[str, WebSocket] = {}
 
 
 @app.get("/")
 async def index(request: Request):
-    """Serve the viewer HTML page."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("viewer.html", {"request": request})
+
+
+@app.get("/status")
+async def status():
+    return {
+        "agents": list(agents.keys()),
+        "viewers": list(viewers.keys())
+    }
 
 
 @app.websocket("/ws/agent/{agent_id}")
 async def agent_ws(ws: WebSocket, agent_id: str):
-    """Handle websocket for an agent connection (the Go client)."""
     await ws.accept()
     agents[agent_id] = ws
     logger.info(f"Agent connected: {agent_id}")
@@ -48,29 +51,39 @@ async def agent_ws(ws: WebSocket, agent_id: str):
     try:
         while True:
             try:
-                data = await ws.receive_text()
-            except (
-                RuntimeError
-            ) as e:  # Например, если сокет неожиданно закрылся без WebSocketDisconnect
-                logger.error(f"Error receiving from {agent_id}: {e}")
-                break  # Выйти из цикла, закрыть сокет
+                data = await ws.receive()
             except Exception as e:
-                logger.exception(f"Unexpected error receiving from {agent_id}: {e}")
-                continue  # Попробовать снова получить, если это не фатально
-            # Route messages from agent to its viewer if exists
-            viewer = agents.get(f"viewer:{agent_id}")
-            if viewer:
-                try:
-                    await viewer.send_text(data)
-                except RuntimeError as e:
-                    logger.error(f"Error sending to viewer:{agent_id}: {e}")
-                    # Может быть, пометить viewer как неактивный или удалить его
-                    agents.pop(f"viewer:{agent_id}", None)
-                    # Продолжить получать от агента, если зритель просто отвалился
-                except Exception as e:
-                    logger.exception(
-                        f"Unexpected error sending to viewer:{agent_id}: {e}"
-                    )
+                logger.error(f"Error receiving from {agent_id}: {e}")
+                break
+
+            if data["type"] == "websocket.disconnect":
+                break
+
+            if data["type"] == "websocket.receive":
+                if "text" in data:
+                    text_data = data["text"]
+                    logger.info(f"Agent {agent_id} text: {text_data[:80]}...")
+                    
+                    viewer = viewers.get(agent_id)
+                    if viewer:
+                        try:
+                            await viewer.send_text(text_data)
+                        except Exception as e:
+                            logger.error(f"Error sending to viewer: {e}")
+                            viewers.pop(agent_id, None)
+                            
+                elif "bytes" in data:
+                    bytes_data = data["bytes"]
+                    logger.debug(f"Agent {agent_id} binary: {len(bytes_data)} bytes")
+                    
+                    viewer = viewers.get(agent_id)
+                    if viewer:
+                        try:
+                            await viewer.send_bytes(bytes_data)
+                        except Exception as e:
+                            logger.error(f"Error sending binary to viewer: {e}")
+                            viewers.pop(agent_id, None)
+
     except WebSocketDisconnect:
         logger.info(f"Agent disconnected: {agent_id}")
     except Exception as e:
@@ -81,35 +94,49 @@ async def agent_ws(ws: WebSocket, agent_id: str):
 
 @app.websocket("/ws/viewer/{agent_id}")
 async def viewer_ws(ws: WebSocket, agent_id: str):
-    """Handle websocket for a viewer connection (the browser)."""
     await ws.accept()
 
-    # Close existing viewer session for the same agent
-    old = agents.get(f"viewer:{agent_id}")
+    old = viewers.get(agent_id)
     if old:
-        await safe_close(old)
+        try:
+            await old.close()
+        except:
+            pass
 
-    agents[f"viewer:{agent_id}"] = ws
-    logger.info(f"Viewer connected: {agent_id}")
+    viewers[agent_id] = ws
+    logger.info(f"Viewer connected for {agent_id}")
 
     try:
         while True:
-            data = await ws.receive_text()
-            # Route messages from viewer to the corresponding agent
-            agent = agents.get(agent_id)
-            if agent:
-                await agent.send_text(data)
+            try:
+                data = await ws.receive()
+            except Exception as e:
+                logger.error(f"Error receiving from viewer {agent_id}: {e}")
+                break
+
+            if data["type"] == "websocket.disconnect":
+                break
+
+            if data["type"] == "websocket.receive":
+                text_data = data.get("text")
+                if text_data:
+                    logger.info(f"Viewer {agent_id} text: {text_data[:80]}...")
+                    
+                    agent = agents.get(agent_id)
+                    if agent:
+                        try:
+                            await agent.send_text(text_data)
+                        except Exception as e:
+                            logger.error(f"Error sending to agent: {e}")
+
     except WebSocketDisconnect:
-        logger.info(f"Viewer disconnected: {agent_id}")
+        logger.info(f"Viewer disconnected for {agent_id}")
     except Exception as e:
         logger.exception(f"Error in viewer socket {agent_id}: {e}")
     finally:
-        agents.pop(f"viewer:{agent_id}", None)
+        viewers.pop(agent_id, None)
 
 
-async def safe_close(ws: WebSocket):
-    """Safely close any old WebSocket session."""
-    try:
-        await ws.close()
-    except Exception as e:
-        logger.warning(f"Error closing old WebSocket: {e}")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
