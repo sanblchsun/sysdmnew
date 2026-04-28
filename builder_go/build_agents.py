@@ -58,10 +58,16 @@ def build_exe(build_slug: str) -> Path:
     )
 
     print(f"[+] Building {output_exe.name}")
+    
+    agent_dir = GO_AGENT_DIR / "cmd" / "agent"
+    env = os.environ.copy()
+    env.pop("GO111MODULE", None)
+    env.pop("GOPROJECT", None)
+    
     subprocess.run(
-        ["go", "build", "-o", str(output_exe), "-ldflags", ldflags, str(GO_ENTRYPOINT)],
-        cwd=GO_AGENT_DIR,
-        env={**os.environ, "GOOS": GOOS, "GOARCH": GOARCH},
+        ["go", "build", "-o", str(output_exe), "-ldflags", ldflags, "."],
+        cwd=agent_dir,
+        env=env,
         check=True,
     )
 

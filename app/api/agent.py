@@ -58,6 +58,7 @@ async def register_agent(
         client_ip = data.external_ip
 
     if not client_ip:
+        logger.warning("Cannot determine client IP for agent registration")
         raise HTTPException(status_code=400, detail="Cannot determine client IP")
 
     # -------------------------

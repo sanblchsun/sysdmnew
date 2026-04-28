@@ -1,5 +1,3 @@
-!./meshcentral/meshcentral-data/*.conf
-meshcentral/meshcentral-data/
 # Python
 builder/dist/agents/
 migrations/versions/

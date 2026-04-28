@@ -22,7 +22,7 @@ go 1.23.0
 require github.com/shirou/gopsutil/v4 v4.25.9
 
 6️⃣ Сборка
-cd builder/agent/
+cd builder_go/agent/
 go mod tidy
 cd ../..
 Далее в окружении (venv)
