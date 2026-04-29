@@ -280,12 +280,11 @@ func checkForUpdate(uuid, token string) {
 // ==================== MAIN LOGIC ====================
 
 func mainLogic() {
-	log.Println("Agent started", BuildSlug)
+	log.Println("Agent started", ServerURL)
 	machineUID := loadOrCreateMachineUID()
 	hostname, _ := os.Hostname()
 
 	var uuid, token string
-
 	// Регистрация без company_id
 	for {
 		resp, code, err := postJSON(ServerURL+"/api/agent/register", map[string]interface{}{
