@@ -2,7 +2,12 @@ import asyncio
 import os
 import subprocess
 import hashlib
+import sys
 from pathlib import Path
+
+# Add project root to Python path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from sqlalchemy import select, desc, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +16,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models import AgentBuild
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-CPP_AGENT_DIR = PROJECT_ROOT / "agent"
+CPP_AGENT_DIR = PROJECT_ROOT / "builder_cpp" / "agent"
 DIST_DIR = PROJECT_ROOT / "dist" / "agents"
 DIST_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -44,21 +48,26 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_exe(build_slug: str) -> Path:
+def build_exe(build_slug: str, server_url: str) -> Path:
     output_exe = DIST_DIR / f"agent_universal_{build_slug}.exe"
 
     print(f"[+] Building {output_exe.name}")
 
+    # Вшиваем параметры в исполняемый файл через макросы компилятора
     cmd = [
         GXX,
         "-o", str(output_exe),
+        f'-DSERVER_URL=\\"{server_url}\\"',
+        f'-DBUILD_SLUG=\\"{build_slug}\\"',
         str(CPP_ENTRYPOINT),
         "-lwinhttp",
         "-lws2_32",
         "-ladvapi32",
+        "-static",
     ]
 
-    subprocess.run(cmd, cwd=str(CPP_AGENT_DIR / "cmd" / "agent"), check=True)
+    print(f"[+] Running: {' '.join(cmd)}")
+    subprocess.run(" ".join(cmd), shell=True, check=True, cwd=str(CPP_AGENT_DIR))
 
     return output_exe
 
@@ -82,7 +91,8 @@ async def build_agent() -> None:
         new_build_slug = increment_build_slug(last_slug)
         print(f"[i] New build slug: {new_build_slug}")
 
-        exe_path = build_exe(new_build_slug)
+        server_url = str(settings.APP_HOST)
+        exe_path = build_exe(new_build_slug, server_url)
 
         sha256 = sha256_file(exe_path)
         print(f"[i] SHA256: {sha256}")

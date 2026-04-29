@@ -45,21 +45,21 @@ async def register_agent(
     # -------------------------
     # 1. Определяем IP агента
     # -------------------------
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    elif request.client:
-        client_ip = request.client.host
+    if not settings.DISABLE_IP_FILTER:
+        # Режим интернета: используем external_ip агента для поиска компании
+        client_ip = data.external_ip
+        if not client_ip:
+            # Если агент не передал external_ip, берём IP подключения
+            if request.client:
+                client_ip = request.client.host
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                client_ip = forwarded.split(",")[0].strip()
     else:
+        # Режим локальной сети: фильтр отключен, IP не используется для поиска компании
         client_ip = None
 
-    # если внешнее поле передали, используем его
-    if data.external_ip:
-        client_ip = data.external_ip
-
-    if not client_ip:
-        logger.warning("Cannot determine client IP for agent registration")
-        raise HTTPException(status_code=400, detail="Cannot determine client IP")
+    agent_external_ip = data.external_ip
 
     # -------------------------
     # 2. Определяем компанию
@@ -67,18 +67,32 @@ async def register_agent(
     company_id = data.company_id
 
     if not company_id:
-        # ищем компанию по external_ip
-        result = await session.execute(
-            select(Company).where(Company.external_ip == client_ip)
-        )
-        company = result.scalars().first()
-        if company:
-            company_id = company.id
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot determine company for agent with IP {client_ip}. Pass company_id explicitly.",
+        if not settings.DISABLE_IP_FILTER:
+            # Интернет-режим: ищем компанию по external_ip
+            if not client_ip:
+                logger.warning("Cannot determine client IP for agent registration")
+                raise HTTPException(status_code=400, detail="Cannot determine client IP")
+            result = await session.execute(
+                select(Company).where(Company.external_ip == client_ip)
             )
+            company = result.scalars().first()
+            if company:
+                company_id = company.id
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot determine company for agent with IP {client_ip}. Pass company_id explicitly.",
+                )
+        else:
+            # Локальная сеть: берём первую компанию как дефолтную
+            result = await session.execute(select(Company).limit(1))
+            company = result.scalars().first()
+            if not company:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No companies found. Create a company or pass company_id explicitly.",
+                )
+            company_id = company.id
     else:
         # проверяем, что компания существует
         company = await session.get(Company, company_id)

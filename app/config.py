@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # === Агенты ===
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
+    DISABLE_IP_FILTER: bool = False
 
     # === Директории ===
     LOG_DIR: str
