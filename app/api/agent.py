@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from loguru import logger
 import os
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, Query, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 import secrets
@@ -313,10 +313,15 @@ from app.schemas.agent import AgentTelemetryModeUpdate
 @router.post("/{agent_id}/telemetry-mode")
 async def set_telemetry_mode(
     agent_id: int,
-    telemetry_mode: str = "none",
+    request: Request,
+    telemetry_mode: str = Form(""),
     session: AsyncSession = Depends(get_db),
 ):
     """Установить режим телеметрии для агента (none, basic, full)."""
+    # Если параметр пустой (чекбокс снят), считаем none
+    if not telemetry_mode:
+        telemetry_mode = "none"
+    
     if telemetry_mode not in ["none", "basic", "full"]:
         raise HTTPException(status_code=400, detail="Invalid telemetry_mode. Use: none, basic, full")
 
