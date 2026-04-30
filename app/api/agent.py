@@ -160,6 +160,8 @@ async def agent_telemetry(
     agent=Depends(get_agent_by_token),
     session: AsyncSession = Depends(get_db),
 ):
+    logger.info(f"Received telemetry from agent {agent.uuid} (mode: {agent.telemetry_mode})")
+    
     # Обновляем AgentAdditionalData
     additional = await session.get(AgentAdditionalData, agent.id)
     if not additional:
@@ -206,6 +208,7 @@ async def agent_heartbeat(
         }
 
     # Если обновление не требуется — не трогаем БД
+    logger.info(f"Heartbeat from agent {agent.uuid}, sending telemetry_mode: {agent.telemetry_mode}")
     return {
         "status": "ok",
         "agent_uuid": agent.uuid,
@@ -310,18 +313,21 @@ from app.schemas.agent import AgentTelemetryModeUpdate
 @router.post("/{agent_id}/telemetry-mode")
 async def set_telemetry_mode(
     agent_id: int,
-    data: AgentTelemetryModeUpdate,
+    telemetry_mode: str = "none",
     session: AsyncSession = Depends(get_db),
 ):
     """Установить режим телеметрии для агента (none, basic, full)."""
-    if data.telemetry_mode not in ["none", "basic", "full"]:
+    if telemetry_mode not in ["none", "basic", "full"]:
         raise HTTPException(status_code=400, detail="Invalid telemetry_mode. Use: none, basic, full")
 
     agent = await session.get(Agent, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    agent.telemetry_mode = data.telemetry_mode
+    old_mode = agent.telemetry_mode
+    agent.telemetry_mode = telemetry_mode
     await session.commit()
+    
+    logger.info(f"Agent {agent.uuid} telemetry mode changed: {old_mode} -> {telemetry_mode}")
 
     return {"status": "ok", "telemetry_mode": agent.telemetry_mode}

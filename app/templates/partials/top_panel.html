@@ -61,8 +61,22 @@
         ></span>
       </td>
 
-      <td>{{ agent.exe_version or "-" }}</td>
-    </tr>
+       <td>{{ agent.exe_version or "-" }}</td>
+
+       <!-- TELEMETRY MODE -->
+       <td>
+         <input
+           type="checkbox"
+           class="telemetry-toggle"
+           data-agent-id="{{ agent.id }}"
+           {% if agent.telemetry_mode != "none" %}checked{% endif %}
+           hx-post="/api/agent/{{ agent.id }}/telemetry-mode?telemetry_mode=full"
+           hx-trigger="change"
+           hx-swap="none"
+           onclick="this.setAttribute('hx-post', '/api/agent/{{ agent.id }}/telemetry-mode?telemetry_mode=' + (this.checked ? 'full' : 'none'))"
+         />
+       </td>
+     </tr>
     {% endfor %}
   </tbody>
 </table>

@@ -48,6 +48,7 @@ async def top_panel(
         "Отдел",
         "Online",
         "exe_v",
+        "Телеметрия",
     ]
 
     # Если ничего не выбрано — просто пустая таблица
@@ -76,6 +77,7 @@ async def top_panel(
             Agent.name_pc,
             Agent.last_seen,
             Agent.exe_version,
+            Agent.telemetry_mode,
             AgentAdditionalData.system,
             AgentAdditionalData.user_name,
             AgentAdditionalData.ip_addr,
@@ -118,6 +120,7 @@ async def top_panel(
                 "department_name": row.department_name,
                 "is_online": is_online,
                 "exe_version": row.exe_version,
+                "telemetry_mode": row.telemetry_mode,
             }
         )
 
