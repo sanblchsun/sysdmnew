@@ -210,6 +210,7 @@ async def agent_heartbeat(
         "status": "ok",
         "agent_uuid": agent.uuid,
         "last_seen": agent.last_seen,
+        "telemetry_mode": agent.telemetry_mode,  # Tell agent what to send
     }
 
 
@@ -300,3 +301,27 @@ async def set_external_ip(
     await session.commit()
 
     return {"status": "ok", "external_ip": company.external_ip}
+
+
+# -------------------- TELEMETRY MODE --------------------
+from app.schemas.agent import AgentTelemetryModeUpdate
+
+
+@router.post("/{agent_id}/telemetry-mode")
+async def set_telemetry_mode(
+    agent_id: int,
+    data: AgentTelemetryModeUpdate,
+    session: AsyncSession = Depends(get_db),
+):
+    """Установить режим телеметрии для агента (none, basic, full)."""
+    if data.telemetry_mode not in ["none", "basic", "full"]:
+        raise HTTPException(status_code=400, detail="Invalid telemetry_mode. Use: none, basic, full")
+
+    agent = await session.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    agent.telemetry_mode = data.telemetry_mode
+    await session.commit()
+
+    return {"status": "ok", "telemetry_mode": agent.telemetry_mode}

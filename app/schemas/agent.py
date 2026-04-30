@@ -39,3 +39,8 @@ class AgentTelemetryIn(BaseModel):
     available_memory: int | None = None
     external_ip: str | None = None
     exe_version: str | None = None
+
+
+# Schema for updating telemetry mode
+class AgentTelemetryModeUpdate(BaseModel):
+    telemetry_mode: str  # "none", "basic", "full"

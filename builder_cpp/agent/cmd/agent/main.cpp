@@ -79,6 +79,7 @@ bool parseUrl(const std::string& url, std::string& host, int& port, std::string&
 std::mutex logMutex;
 std::ofstream logFile;
 std::atomic<bool> g_stopRequested(false);
+std::string g_telemetryMode = "none";  // "none", "basic", "full"
 SERVICE_STATUS serviceStatus = {0};
 SERVICE_STATUS_HANDLE serviceHandle = NULL;
 HANDLE stopEvent = NULL;
@@ -327,12 +328,28 @@ bool postJSON(const std::string& url, const std::string& bodyStr, std::string& r
 
     // Use full path with query params for OpenRequest
     std::wstring wpath(fullPath.begin(), fullPath.end());
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", wpath.c_str(), NULL, NULL, NULL, 0);
+    
+    // Determine if HTTPS is needed
+    DWORD dwFlags = 0;
+    if (url.find("https://") == 0) {
+        dwFlags |= WINHTTP_FLAG_SECURE;
+    }
+    
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", wpath.c_str(), NULL, NULL, NULL, dwFlags);
     if (!hRequest) {
         logf("WinHttpOpenRequest failed: %lu", GetLastError());
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
         return false;
+    }
+    
+    // Ignore SSL certificate errors for self-signed certs in dev
+    if (url.find("https://") == 0) {
+        DWORD dwFlags = SECURITY_FLAG_IGNORE_UNKNOWN_CA |
+                      SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+                      SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+                      SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
+        WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &dwFlags, sizeof(dwFlags));
     }
 
     std::wstring header = L"Content-Type: application/json\r\n";
@@ -637,6 +654,8 @@ void checkForUpdate(const std::string& uuid, const std::string& token) {
 
     // Replace executable
     std::string oldPath = exePath + ".old";
+    // Delete existing .old file if present
+    DeleteFileA(oldPath.c_str());
     if (MoveFileA(exePath.c_str(), oldPath.c_str())) {
         if (MoveFileA(tmpPath.c_str(), exePath.c_str())) {
             log("Update successful, starting new version...");
@@ -647,15 +666,29 @@ void checkForUpdate(const std::string& uuid, const std::string& token) {
             int code;
             postJSON(serverURL + "/api/agent/telemetry?uuid=" + uuid + "&token=" + token, telemetryBody, dummy, code);
 
-            // Exit current process - service manager will restart with new exe
-            // since service is set to auto-start
-            log("Update installed, exiting for service restart...");
-            g_stopRequested = true;
-            if (stopEvent) SetEvent(stopEvent);
+            // Schedule a service restart via a detached process
+            // This avoids SCM conflicts when restarting from within the service
+            STARTUPINFOA si = {0};
+            si.cb = sizeof(si);
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+            PROCESS_INFORMATION pi = {0};
             
-            // Give time for service to stop gracefully
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            return;
+            // Command: wait 2 seconds then restart service
+            char cmd[MAX_PATH * 2];
+            sprintf_s(cmd, sizeof(cmd), "cmd.exe /c \"timeout /t 2 /nobreak >nul && sc start SystemMonitoringAgent\"");
+            
+            if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                log("Scheduled service restart in 2 seconds");
+            } else {
+                logf("Failed to schedule restart: %lu", GetLastError());
+            }
+            
+            // Give time for the scheduled restart to execute
+            Sleep(3000);
+            ExitProcess(0);  // Clean exit
         } else {
             // Restore old file
             MoveFileA(oldPath.c_str(), exePath.c_str());
@@ -767,7 +800,35 @@ void mainLogic() {
         log("Sending heartbeat...");
         std::string dummy;
         int code;
-        postJSON(serverURL + "/api/agent/heartbeat?uuid=" + uuid + "&token=" + token, "{}", dummy, code);
+        std::string hbBody = "{}";
+        postJSON(serverURL + "/api/agent/heartbeat?uuid=" + uuid + "&token=" + token, hbBody, dummy, code);
+        
+        // Parse telemetry_mode from heartbeat response (dummy contains response)
+        size_t modePos = dummy.find("\"telemetry_mode\":\"");
+        if (modePos != std::string::npos) {
+            modePos += 18; // length of "telemetry_mode":"
+            size_t modeEnd = dummy.find("\"", modePos);
+            if (modeEnd != std::string::npos) {
+                g_telemetryMode = dummy.substr(modePos, modeEnd - modePos);
+                logf("Telemetry mode: %s", g_telemetryMode.c_str());
+            }
+        }
+
+        // Send telemetry if mode is "full"
+        if (g_telemetryMode == "full" && !g_stopRequested) {
+            log("Sending telemetry (full mode)...");
+            TelemetryData telemetry = collectTelemetry();
+            telemetry.system = buildSlug;
+            
+            std::string telemetryBody = "{\"system\":\"" + telemetry.system + "\","
+                                       "\"user_name\":\"" + jsonEscape(telemetry.userName) + "\","
+                                       "\"ip_addr\":\"" + telemetry.ipAddr + "\","
+                                       "\"external_ip\":\"" + telemetry.externalIP + "\","
+                                       "\"total_memory\":" + std::to_string(telemetry.totalMemory) + ","
+                                       "\"available_memory\":" + std::to_string(telemetry.availableMemory) + ","
+                                       "\"exe_version\":\"" + buildSlug + "\"}";
+            postJSON(serverURL + "/api/agent/telemetry?uuid=" + uuid + "&token=" + token, telemetryBody, dummy, code);
+        }
 
         // Update check every 60 seconds
         for (int i = 0; i < 50 && !g_stopRequested; i++) {
@@ -847,9 +908,18 @@ bool installService() {
         CloseServiceHandle(scm);
         return false;
     }
+    
+    // Setup recovery options: restart on failure
+    SERVICE_FAILURE_ACTIONS actions = {0};
+    SC_ACTION action = { SC_ACTION_RESTART, 1000 }; // Restart after 1 second
+    actions.cActions = 1;
+    actions.lpsaActions = &action;
+    actions.dwResetPeriod = 86400; // Reset failure count after 1 day
+    ChangeServiceConfig2A(svc, SERVICE_CONFIG_FAILURE_ACTIONS, &actions);
+    
     CloseServiceHandle(svc);
     CloseServiceHandle(scm);
-    log("Service installed successfully");
+    log("Service installed successfully with auto-restart");
     return true;
 }
 

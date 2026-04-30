@@ -103,6 +103,9 @@ class Agent(Base):
     # Версия билда exe
     exe_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
+    # Режим телеметрии (none, basic, full)
+    telemetry_mode: Mapped[str] = mapped_column(String(20), default="none", nullable=False)
+
 
 class AgentAdditionalData(Base):
     __tablename__ = "agent_additional_data"
