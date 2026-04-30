@@ -1,4 +1,5 @@
 # Python
+letsencrypt/
 builder/dist/agents/
 migrations/versions/
 certbot/
