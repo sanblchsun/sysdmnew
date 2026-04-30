@@ -1,3 +1,4 @@
+// app/static/tree.js
 "use strict";
 
 const STORAGE_KEY = "tree-state";

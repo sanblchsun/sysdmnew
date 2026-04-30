@@ -51,7 +51,7 @@ async def register_agent(
         if not client_ip:
             # Если агент не передал external_ip, берём IP подключения
             if request.client:
-                client_ip = request.client.host
+                client_ip = request.client.host if request.client else None
             forwarded = request.headers.get("x-forwarded-for")
             if forwarded:
                 client_ip = forwarded.split(",")[0].strip()
@@ -71,7 +71,9 @@ async def register_agent(
             # Интернет-режим: ищем компанию по external_ip
             if not client_ip:
                 logger.warning("Cannot determine client IP for agent registration")
-                raise HTTPException(status_code=400, detail="Cannot determine client IP")
+                raise HTTPException(
+                    status_code=400, detail="Cannot determine client IP"
+                )
             result = await session.execute(
                 select(Company).where(Company.external_ip == client_ip)
             )
@@ -143,11 +145,11 @@ async def register_agent(
 
     additional.system = data.system
     additional.user_name = data.user_name
-    additional.ip_addr = client_ip
+    additional.ip_addr = data.ip_addr or client_ip
     additional.disks = [d.model_dump() for d in data.disks]
     additional.total_memory = data.total_memory
     additional.available_memory = data.available_memory
-    additional.external_ip = client_ip
+    additional.external_ip = agent_external_ip or client_ip
 
     await session.commit()
 
@@ -160,8 +162,10 @@ async def agent_telemetry(
     agent=Depends(get_agent_by_token),
     session: AsyncSession = Depends(get_db),
 ):
-    logger.info(f"Received telemetry from agent {agent.uuid} (mode: {agent.telemetry_mode})")
-    
+    logger.info(
+        f"Received telemetry from agent {agent.uuid} (mode: {agent.telemetry_mode})"
+    )
+
     # Обновляем AgentAdditionalData
     additional = await session.get(AgentAdditionalData, agent.id)
     if not additional:
@@ -208,7 +212,9 @@ async def agent_heartbeat(
         }
 
     # Если обновление не требуется — не трогаем БД
-    logger.info(f"Heartbeat from agent {agent.uuid}, sending telemetry_mode: {agent.telemetry_mode}")
+    logger.info(
+        f"Heartbeat from agent {agent.uuid}, sending telemetry_mode: {agent.telemetry_mode}"
+    )
     return {
         "status": "ok",
         "agent_uuid": agent.uuid,
@@ -321,9 +327,11 @@ async def set_telemetry_mode(
     # Если параметр пустой (чекбокс снят), считаем none
     if not telemetry_mode:
         telemetry_mode = "none"
-    
+
     if telemetry_mode not in ["none", "basic", "full"]:
-        raise HTTPException(status_code=400, detail="Invalid telemetry_mode. Use: none, basic, full")
+        raise HTTPException(
+            status_code=400, detail="Invalid telemetry_mode. Use: none, basic, full"
+        )
 
     agent = await session.get(Agent, agent_id)
     if not agent:
@@ -332,7 +340,9 @@ async def set_telemetry_mode(
     old_mode = agent.telemetry_mode
     agent.telemetry_mode = telemetry_mode
     await session.commit()
-    
-    logger.info(f"Agent {agent.uuid} telemetry mode changed: {old_mode} -> {telemetry_mode}")
+
+    logger.info(
+        f"Agent {agent.uuid} telemetry mode changed: {old_mode} -> {telemetry_mode}"
+    )
 
     return {"status": "ok", "telemetry_mode": agent.telemetry_mode}

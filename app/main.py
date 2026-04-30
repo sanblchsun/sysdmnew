@@ -4,14 +4,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.requests import Request
+from fastapi import Request
 from app.api import pages
 from fastapi.responses import RedirectResponse
 from app.api import web_cookie
 from app.middleware.auth_html import AuthHTMLMiddleware
 from app.api.agent import router as agent_router
 from app.ws import agent_ws
-
 
 app = FastAPI(title="SysDM RMM")
 app.add_middleware(AuthHTMLMiddleware)

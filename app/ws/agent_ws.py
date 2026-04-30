@@ -14,8 +14,12 @@ active_connections: dict[int, WebSocket] = {}
 
 
 async def get_agent_by_token_ws(token: str, session: AsyncSession) -> Agent | None:
-    result = await session.execute(select(Agent).where(Agent.token == token))
-    return result.scalars().first()
+    try:
+        result = await session.execute(select(Agent).where(Agent.token == token))
+        return result.scalars().first()
+    except Exception as e:
+        logger.error(f"Error getting agent by token: {e}")
+        return None
 
 
 @router.websocket("/ws/agent")
