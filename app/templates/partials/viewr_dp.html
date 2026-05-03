@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Stream</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        color: #9f9;
+        font: 12px monospace;
+      }
+      #container,
+      #media {
+        width: 100vw;
+        height: 100vh;
+      }
+      #media {
+        display: block;
+        object-fit: contain;
+        background: #000;
+      }
+      .hud {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+      .err {
+        position: fixed;
+        top: 8px;
+        right: 8px;
+        background: rgba(120, 0, 0, 0.6);
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: #fff;
+      }
+      .ctrl {
+        position: fixed;
+        bottom: 8px;
+        left: 8px;
+        background: rgba(0, 0, 0, 0.45);
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container"></div>
+    <div class="hud" id="hud">loading…</div>
+    <div class="err" id="err" style="display: none"></div>
+    <div class="ctrl" id="ctrl">ctrl: —</div>
+
+    <script type="module">
+      const qs = new URLSearchParams(location.search);
+      const id = qs.get("agent_id") || "agent1";
+      const hud = document.getElementById("hud");
+      const err = document.getElementById("err");
+      const ctl = document.getElementById("ctrl");
+      const box = document.getElementById("container");
+
+      function showErr(t) {
+        err.style.display = "block";
+        err.textContent = t;
+      }
+
+      async function getCurrent() {
+        const d = await (await fetch("/agents")).json();
+        return d.agents.find((a) => a.id === id);
+      }
+
+      // ========= CONTROL (mouse + keyboard + clipboard) =========
+      let ctrlWs = null;
+      let agentScreen = null;
+      let lastMove = 0;
+      const MOUSE_MOVE_HZ = 100;
+      let clipboardPermissionGranted = false;
+      let lastPasteText = "";
+
+      async function ensureClipboardPermission() {
+        if (clipboardPermissionGranted) return true;
+        try {
+          const perm = await navigator.permissions.query({ name: "clipboard-read" });
+          if (perm.state === "granted") {
+            clipboardPermissionGranted = true;
+            return true;
+          }
+          if (perm.state === "prompt") {
+            const text = await navigator.clipboard.readText().catch(() => "");
+            if (text !== "" || navigator.clipboard.readText) {
+              clipboardPermissionGranted = true;
+              return true;
+            }
+          }
+        } catch {}
+        return clipboardPermissionGranted;
+      }
+      // Нужно, чтобы не дублировать key_down на автоповторе и чтобы на blur/отключении
+      // отпустить все «залипшие» клавиши.
+      const heldKeys = new Set();
+
+      function openCtrlWS() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ctrlWs = new WebSocket(
+          `${proto}://${location.host}/ws/control/viewer/${encodeURIComponent(id)}`,
+        );
+        ctrlWs.onopen = () => {
+          ctl.textContent = "ctrl: connected";
+        };
+        ctrlWs.onclose = () => {
+          ctl.textContent = "ctrl: offline";
+          heldKeys.clear();
+          ctrlWs = null;
+          setTimeout(openCtrlWS, 2000);
+        };
+        ctrlWs.onerror = () => {
+          try {
+            ctrlWs.close();
+          } catch {}
+        };
+        ctrlWs.onmessage = (ev) => {
+          let d;
+          try {
+            d = JSON.parse(ev.data);
+          } catch {
+            return;
+          }
+          if (d.type === "hello") {
+            agentScreen = { w: d.screen_w | 0, h: d.screen_h | 0 };
+            ctl.textContent = `ctrl: ${agentScreen.w}×${agentScreen.h}`;
+          } else if (d.type === "clipboard") {
+            // Буфер обмена агента изменился — кладём в свой.
+            // В Chrome это требует secure-context: работает на localhost и https.
+            // На http://LAN_IP writeText может отклониться — это ограничение браузера.
+            if (
+              d.text &&
+              navigator.clipboard &&
+              navigator.clipboard.writeText
+            ) {
+              navigator.clipboard.writeText(d.text).catch(() => {});
+            }
+          }
+        };
+      }
+      function sendCtrl(obj) {
+        if (ctrlWs && ctrlWs.readyState === 1) ctrlWs.send(JSON.stringify(obj));
+      }
+
+      // ---- mouse ----
+      function mapToScreen(el, clientX, clientY, mediaW, mediaH) {
+        if (!mediaW || !mediaH) return null;
+        const rect = el.getBoundingClientRect();
+        const lx = clientX - rect.left,
+          ly = clientY - rect.top;
+        const er = rect.width / rect.height,
+          mr = mediaW / mediaH;
+        let dW,
+          dH,
+          oX = 0,
+          oY = 0;
+        if (er > mr) {
+          dH = rect.height;
+          dW = dH * mr;
+          oX = (rect.width - dW) / 2;
+        } else {
+          dW = rect.width;
+          dH = dW / mr;
+          oY = (rect.height - dH) / 2;
+        }
+        const xi = lx - oX,
+          yi = ly - oY;
+        if (xi < 0 || yi < 0 || xi > dW || yi > dH) return null;
+        const sW = agentScreen ? agentScreen.w : mediaW;
+        const sH = agentScreen ? agentScreen.h : mediaH;
+        const x = Math.round((xi / dW) * sW);
+        const y = Math.round((yi / dH) * sH);
+        return {
+          x: Math.max(0, Math.min(sW - 1, x)),
+          y: Math.max(0, Math.min(sH - 1, y)),
+        };
+      }
+      function attachMouse(el, getSize) {
+        el.style.cursor = "default";
+        el.addEventListener("contextmenu", (e) => e.preventDefault());
+        el.addEventListener("mousemove", (e) => {
+          const now = performance.now();
+          if (now - lastMove < 1000 / MOUSE_MOVE_HZ) return;
+          lastMove = now;
+          const s = getSize();
+          if (!s) return;
+          const p = mapToScreen(el, e.clientX, e.clientY, s.w, s.h);
+          if (p) sendCtrl({ type: "mouse_move", x: p.x, y: p.y });
+        });
+        ["mousedown", "mouseup"].forEach((evt) =>
+          el.addEventListener(evt, (e) => {
+            e.preventDefault();
+            const s = getSize();
+            if (!s) return;
+            const p = mapToScreen(el, e.clientX, e.clientY, s.w, s.h);
+            if (!p) return;
+            sendCtrl({
+              type: evt === "mousedown" ? "mouse_down" : "mouse_up",
+              button: e.button,
+              x: p.x,
+              y: p.y,
+            });
+          }),
+        );
+        el.addEventListener(
+          "wheel",
+          (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -120 : 120;
+            sendCtrl({ type: "mouse_wheel", delta });
+          },
+          { passive: false },
+        );
+      }
+
+      // ---- keyboard ----
+      // Печатный символ без Ctrl/Alt/Meta -> уходит одной Unicode-буквой через "text".
+      // Всё остальное (Enter, стрелки, модификаторы, F1..F12, шорткаты) -> "key_down"/"key_up".
+      function isPrintableKey(e) {
+        return (
+          e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey
+        );
+      }
+      function sendKeyDown(code) {
+        if (heldKeys.has(code)) return;
+        heldKeys.add(code);
+        sendCtrl({ type: "key_down", code });
+      }
+      function sendKeyUp(code) {
+        if (!heldKeys.has(code)) return;
+        heldKeys.delete(code);
+        sendCtrl({ type: "key_up", code });
+      }
+
+      window.addEventListener("keydown", (e) => {
+        if (!ctrlWs || ctrlWs.readyState !== 1) return;
+
+        if ((e.ctrlKey || e.metaKey) && e.code === "KeyV" && !e.altKey) {
+          e.preventDefault();
+          (async () => {
+            let text = null;
+            if (await ensureClipboardPermission()) {
+              if (navigator.clipboard && navigator.clipboard.readText) {
+                try {
+                  text = await navigator.clipboard.readText();
+                } catch {}
+              }
+            }
+            if (!text && lastPasteText) {
+              text = lastPasteText;
+              lastPasteText = "";
+            }
+            if (text) {
+              const mods = [
+                "ControlLeft",
+                "ControlRight",
+                "AltLeft",
+                "AltRight",
+                "MetaLeft",
+                "MetaRight",
+                "OSLeft",
+                "OSRight",
+              ];
+              const held = mods.filter((c) => heldKeys.has(c));
+              for (const c of held) sendCtrl({ type: "key_up", code: c });
+              sendCtrl({ type: "clipboard", text });
+              await new Promise((r) => setTimeout(r, 50));
+              sendCtrl({ type: "key_down", code: "ControlLeft" });
+              sendCtrl({ type: "key_down", code: "KeyV" });
+              sendCtrl({ type: "key_up", code: "KeyV" });
+              sendCtrl({ type: "key_up", code: "ControlLeft" });
+              for (const c of held) sendCtrl({ type: "key_down", code: c });
+              console.log("Ctrl+V sent:", text);
+            }
+          })();
+          return;
+        }
+
+        if (isPrintableKey(e)) {
+          console.log("Sending text:", e.key);
+          sendCtrl({ type: "text", text: e.key });
+        } else {
+          sendKeyDown(e.code);
+        }
+        e.preventDefault();
+      });
+
+      window.addEventListener("keyup", (e) => {
+        if (!ctrlWs || ctrlWs.readyState !== 1) return;
+        if ((e.ctrlKey || e.metaKey) && e.code === "KeyV" && !e.altKey) {
+          // соответствующий keydown мы проглотили -> keyup тоже не шлём
+          e.preventDefault();
+          return;
+        }
+        sendKeyUp(e.code);
+        e.preventDefault();
+      });
+
+      // Страница потеряла фокус — отпускаем всё, что «держали», чтобы на агенте
+      // не осталось висящих модификаторов.
+      window.addEventListener("blur", () => {
+        for (const code of Array.from(heldKeys)) sendKeyUp(code);
+      });
+
+      // ---- clipboard: viewer -> agent (вставка) ----
+      // Paste-событие даёт синхронный доступ к clipboardData даже без secure-context.
+      document.addEventListener("paste", (e) => {
+        const text = e.clipboardData && e.clipboardData.getData("text/plain");
+        if (text) {
+          lastPasteText = text;
+        }
+        if (!ctrlWs || ctrlWs.readyState !== 1) return;
+        if (text) {
+          const mods = [
+            "ControlLeft",
+            "ControlRight",
+            "AltLeft",
+            "AltRight",
+            "MetaLeft",
+            "MetaRight",
+            "OSLeft",
+            "OSRight",
+          ];
+          const held = mods.filter((c) => heldKeys.has(c));
+          for (const c of held) sendCtrl({ type: "key_up", code: c });
+          sendCtrl({ type: "clipboard", text });
+          console.log("Sending text:", text);
+          for (const c of held) sendCtrl({ type: "key_down", code: c });
+        }
+        e.preventDefault();
+      });
+
+      // ========= H.264 via WebCodecs =========
+      function nalType(b) {
+        return b & 0x1f;
+      }
+
+      async function pickDecoderConfig(codec) {
+        const candidates = [
+          {
+            codec,
+            hardwareAcceleration: "prefer-hardware",
+            optimizeForLatency: true,
+          },
+          { codec, hardwareAcceleration: "prefer-hardware" },
+          { codec, optimizeForLatency: true },
+          { codec },
+          {
+            codec,
+            hardwareAcceleration: "prefer-software",
+            optimizeForLatency: true,
+          },
+          { codec, hardwareAcceleration: "prefer-software" },
+        ];
+        for (const cfg of candidates) {
+          try {
+            const res = await VideoDecoder.isConfigSupported(cfg);
+            if (res && res.supported) return res.config || cfg;
+          } catch {}
+        }
+        return null;
+      }
+
+      function startH264(canvas) {
+        if (!("VideoDecoder" in window)) {
+          showErr("Браузер не поддерживает WebCodecs. Обновите Chrome/Edge.");
+          return;
+        }
+        const ctx = canvas.getContext("2d");
+        let decoder = null;
+        let initInFlight = false;
+        let buf = new Uint8Array(0);
+        let waitingKey = true;
+        let frames = 0,
+          bytes = 0,
+          t0 = performance.now();
+
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const ws = new WebSocket(
+          `${proto}://${location.host}/ws/stream/h264/${encodeURIComponent(id)}`,
+        );
+        ws.binaryType = "arraybuffer";
+        ws.onopen = () =>
+          (hud.textContent = "h264: connected, waiting keyframe…");
+        ws.onclose = () => (hud.textContent = "h264: disconnected");
+        ws.onerror = () => showErr("WebSocket error");
+        ws.onmessage = (ev) => {
+          const add = new Uint8Array(ev.data);
+          bytes += add.length;
+          if (add.length === 0) return;
+          const merged = new Uint8Array(buf.length + add.length);
+          merged.set(buf, 0);
+          merged.set(add, buf.length);
+          buf = merged;
+          drainAUs();
+        };
+
+        function findStartCodes(data) {
+          const out = [];
+          let i = 0,
+            n = data.length;
+          while (i + 3 < n) {
+            if (data[i] === 0 && data[i + 1] === 0) {
+              if (data[i + 2] === 1) {
+                out.push({ pos: i, len: 3 });
+                i += 3;
+                continue;
+              }
+              if (i + 3 < n && data[i + 2] === 0 && data[i + 3] === 1) {
+                out.push({ pos: i, len: 4 });
+                i += 4;
+                continue;
+              }
+            }
+            i++;
+          }
+          return out;
+        }
+        function drainAUs() {
+          const codes = findStartCodes(buf);
+          if (codes.length < 2) return;
+          const starts = [];
+          for (let k = 0; k < codes.length; k++) {
+            const c = codes[k];
+            const t = nalType(buf[c.pos + c.len]);
+            if (t === 9) starts.push(c.pos);
+            else if (t === 7 && starts.length === 0) starts.push(c.pos);
+          }
+          if (starts.length < 2) return;
+          for (let i = 0; i < starts.length - 1; i++) {
+            const au = buf.subarray(starts[i], starts[i + 1]);
+            handleAU(au);
+          }
+          buf = buf.slice(starts[starts.length - 1]);
+        }
+        function findNALU(au, type) {
+          const cs = findStartCodes(au);
+          for (const c of cs)
+            if (nalType(au[c.pos + c.len]) === type) return c.pos + c.len;
+          return -1;
+        }
+        function codecStringFromSPS(au) {
+          const off = findNALU(au, 7);
+          if (off < 0) return "avc1.42E01E";
+          const h = (x) => x.toString(16).padStart(2, "0").toUpperCase();
+          return `avc1.${h(au[off + 1])}${h(au[off + 2])}${h(au[off + 3])}`;
+        }
+
+        function resetDecoder() {
+          if (decoder) {
+            try {
+              decoder.close();
+            } catch {}
+          }
+          decoder = null;
+          waitingKey = true;
+          initInFlight = false;
+        }
+
+        async function initDecoder(keyAUCopy) {
+          initInFlight = true;
+          const codec = codecStringFromSPS(keyAUCopy);
+          try {
+            const cfg = await pickDecoderConfig(codec);
+            if (!cfg) {
+              showErr(`Нет поддерживаемой конфигурации для ${codec}`);
+              initInFlight = false;
+              return;
+            }
+            const dec = new VideoDecoder({
+              output: onFrame,
+              error: (e) => {
+                showErr("decoder: " + e.message);
+                resetDecoder();
+              },
+            });
+            dec.configure(cfg);
+            decoder = dec;
+            waitingKey = false;
+            hud.textContent =
+              `h264: decoder configured (${cfg.codec}` +
+              (cfg.hardwareAcceleration
+                ? `, ${cfg.hardwareAcceleration}`
+                : "") +
+              `)`;
+            try {
+              dec.decode(
+                new EncodedVideoChunk({
+                  type: "key",
+                  timestamp: performance.now() * 1000,
+                  data: keyAUCopy,
+                }),
+              );
+            } catch {
+              resetDecoder();
+            }
+          } catch (e) {
+            showErr("init failed: " + e.message);
+            resetDecoder();
+          } finally {
+            initInFlight = false;
+          }
+        }
+
+        function handleAU(au) {
+          const hasIDR = findNALU(au, 5) >= 0;
+          const hasP = findNALU(au, 1) >= 0;
+          if (!hasIDR && !hasP) return;
+          const isKey = hasIDR;
+          if (!decoder) {
+            if (!isKey || initInFlight) return;
+            const keyCopy = new Uint8Array(au);
+            initDecoder(keyCopy);
+            return;
+          }
+          if (decoder.state !== "configured") return;
+          if (waitingKey) {
+            if (!isKey) return;
+            waitingKey = false;
+          }
+          try {
+            decoder.decode(
+              new EncodedVideoChunk({
+                type: isKey ? "key" : "delta",
+                timestamp: performance.now() * 1000,
+                data: au,
+              }),
+            );
+          } catch {
+            resetDecoder();
+          }
+        }
+        function onFrame(frame) {
+          if (canvas.width !== frame.displayWidth) {
+            canvas.width = frame.displayWidth;
+            canvas.height = frame.displayHeight;
+          }
+          ctx.drawImage(frame, 0, 0);
+          frame.close();
+          frames++;
+          const dt = performance.now() - t0;
+          if (dt > 1000) {
+            const fps = ((frames * 1000) / dt).toFixed(1);
+            const mbps = ((bytes * 8) / 1e6 / (dt / 1000)).toFixed(2);
+            hud.textContent = `h264  ${fps} fps  ${mbps} Mbit/s`;
+            frames = 0;
+            bytes = 0;
+            t0 = performance.now();
+          }
+        }
+      }
+
+      // ========= start =========
+      let mode = null;
+      async function start() {
+        const a = await getCurrent();
+        const cur = a?.current?.codec || "mjpeg";
+        mode = cur === "h264" ? "h264" : "mjpeg";
+        if (mode === "mjpeg") {
+          box.innerHTML = `<img id="media" src="/stream/mjpeg/${encodeURIComponent(id)}?t=${Date.now()}">`;
+          const img = document.getElementById("media");
+          attachMouse(img, () => ({
+            w: img.naturalWidth,
+            h: img.naturalHeight,
+          }));
+          img.onload = () =>
+            (hud.textContent = `mjpeg  ${img.naturalWidth}×${img.naturalHeight}`);
+        } else {
+          box.innerHTML = `<canvas id="media"></canvas>`;
+          const cv = document.getElementById("media");
+          startH264(cv);
+          attachMouse(cv, () => ({ w: cv.width, h: cv.height }));
+        }
+      }
+
+      setInterval(async () => {
+        try {
+          const a = await getCurrent();
+          const now = a?.current?.codec === "h264" ? "h264" : "mjpeg";
+          if (now !== mode) location.reload();
+        } catch {}
+      }, 3000);
+
+      openCtrlWS();
+      start();
+    </script>
+  </body>
+</html>

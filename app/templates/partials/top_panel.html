@@ -63,6 +63,13 @@
 
        <td>{{ agent.exe_version or "-" }}</td>
 
+       <!-- RDP BUTTON -->
+       <td>
+         <a href="/rdp/dashboard" target="_blank" class="rdp-btn" title="Открыть RDP Dashboard">
+           <span class="rdp-icon">🖥️</span>
+         </a>
+       </td>
+
        <!-- TELEMETRY MODE -->
        <td>
          <form id="tel-form-{{ agent.id }}" hx-post="/api/agent/{{ agent.id }}/telemetry-mode" hx-swap="none">

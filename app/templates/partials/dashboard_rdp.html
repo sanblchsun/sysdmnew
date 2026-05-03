@@ -1,0 +1,389 @@
+<!-- server/static/index.html -->
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Stream relay</title>
+    <style>
+      body {
+        font-family: system-ui, Arial;
+        background: #111;
+        color: #eee;
+        margin: 0;
+        padding: 16px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+      }
+      .card {
+        background: #1b1b1b;
+        border: 1px solid #333;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .card header {
+        padding: 8px 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #222;
+        font-size: 14px;
+      }
+      .card .media {
+        display: block;
+        background: #000;
+        width: 100%;
+        aspect-ratio: 16/9;
+        object-fit: contain;
+      }
+      .card .ctrl {
+        padding: 8px 12px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        font-size: 12px;
+        background: #191919;
+        border-top: 1px solid #2a2a2a;
+        align-items: center;
+      }
+      .ctrl label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+        min-width: 0;
+        color: #bbb;
+      }
+      .ctrl select,
+      .ctrl input,
+      .ctrl button {
+        background: #222;
+        color: #eee;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 4px 6px;
+        font: inherit;
+      }
+      .ctrl select {
+        max-width: 90px;
+      }
+      .ctrl input {
+        width: 56px;
+      }
+      .ctrl input[name="mjpeg_q"],
+      .ctrl input[name="fps"] {
+        width: 44px;
+      }
+      .ctrl button {
+        cursor: pointer;
+        background: #2a3b2a;
+        border-color: #3a5a3a;
+        color: #e7ffe7;
+        transition:
+          transform 60ms ease,
+          background 120ms ease,
+          border-color 120ms ease;
+        user-select: none;
+        min-width: 84px;
+        text-align: center;
+      }
+      .ctrl button:hover:not(:disabled) {
+        background: #355535;
+        border-color: #4a7a4a;
+      }
+      .ctrl button:active:not(:disabled) {
+        background: #1e2d1e;
+        border-color: #2c4a2c;
+        transform: translateY(1px);
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+      }
+      .ctrl button.ok {
+        background: #2e6b2e;
+        border-color: #4aa04a;
+      }
+      .ctrl button.bad {
+        background: #6b2e2e;
+        border-color: #a04a4a;
+      }
+      .ctrl button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      .ok {
+        background: #3c3;
+      }
+      .off {
+        background: #c33;
+      }
+      .stats {
+        font-size: 12px;
+        color: #aaa;
+      }
+      .tag {
+        font: 11px monospace;
+        color: #9cf;
+        background: #1b2430;
+        padding: 1px 6px;
+        border-radius: 3px;
+      }
+      .empty {
+        color: #888;
+        padding: 40px;
+        text-align: center;
+        border: 1px dashed #444;
+        border-radius: 8px;
+      }
+      .ph {
+        aspect-ratio: 16/9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #000;
+        color: #6c9;
+        font: 14px monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Агенты</h1>
+    <div id="root">
+      <div class="empty" id="empty">Нет подключённых агентов.</div>
+    </div>
+
+    <script>
+      const cards = new Map();
+
+      async function apiGet(u) {
+        return (await fetch(u)).json();
+      }
+      async function apiPost(u, body) {
+        const r = await fetch(u, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }
+
+      function ensureGrid() {
+        const e = document.getElementById("empty");
+        if (e) e.remove();
+        let g = document.getElementById("grid");
+        if (!g) {
+          g = document.createElement("div");
+          g.className = "grid";
+          g.id = "grid";
+          document.getElementById("root").appendChild(g);
+        }
+        return g;
+      }
+
+      function makeCard(a) {
+        const el = document.createElement("div");
+        el.className = "card";
+        el.innerHTML = `
+    <header>
+      <span><span class="dot"></span><b></b> <span class="tag"></span></span>
+      <span class="stats"></span>
+    </header>
+    <a target="_blank"><img class="media" alt=""></a>
+    <div class="ctrl">
+      <label>codec
+        <select name="codec">
+          <option value="mjpeg">MJPEG</option>
+          <option value="h264">H.264</option>
+        </select>
+      </label>
+      <label data-role="h264-only">enc
+        <select name="encoder">
+          <option value="cpu"   title="libx264">CPU</option>
+          <option value="amf"   title="h264_amf">AMD</option>
+          <option value="qsv"   title="h264_qsv">Intel</option>
+          <option value="nvenc" title="h264_nvenc">NVIDIA</option>
+        </select>
+      </label>
+      <label data-role="h264-only">br <input name="bitrate" value="4M"></label>
+      <label data-role="mjpeg-only">q <input name="mjpeg_q" value="4" type="number" min="2" max="31"></label>
+      <label>fps <input name="fps" value="30" type="number" min="1" max="120"></label>
+      <button type="button">Применить</button>
+    </div>`;
+        const name = el.querySelector("b");
+        const tag = el.querySelector(".tag");
+        const dot = el.querySelector(".dot");
+        const stats = el.querySelector(".stats");
+        const img = el.querySelector("img");
+        const link = el.querySelector("a");
+        const btn = el.querySelector("button");
+        const sel = (n) => el.querySelector(`[name=${n}]`);
+
+        const applyCodecVisibility = () => {
+          const h264 = sel("codec").value === "h264";
+          el.querySelectorAll('[data-role="h264-only"]').forEach(
+            (e) => (e.style.display = h264 ? "" : "none"),
+          );
+          el.querySelectorAll('[data-role="mjpeg-only"]').forEach(
+            (e) => (e.style.display = h264 ? "none" : ""),
+          );
+        };
+        sel("codec").addEventListener("change", applyCodecVisibility);
+        applyCodecVisibility();
+
+        let busy = false;
+        btn.onclick = async () => {
+          if (busy) return;
+          busy = true;
+          const original = btn.textContent;
+          btn.disabled = true;
+          btn.classList.remove("ok", "bad");
+          btn.textContent = "…";
+          const body = {
+            codec: sel("codec").value,
+            encoder: sel("encoder").value,
+            bitrate: sel("bitrate").value,
+            fps: parseInt(sel("fps").value, 10),
+            mjpeg_q: parseInt(sel("mjpeg_q").value, 10),
+          };
+          try {
+            await apiPost(`/agents/${encodeURIComponent(a.id)}/config`, body);
+            btn.textContent = "✓ применено";
+            btn.classList.add("ok");
+          } catch (e) {
+            btn.textContent = "✗ ошибка";
+            btn.classList.add("bad");
+          }
+          setTimeout(() => {
+            btn.textContent = original;
+            btn.classList.remove("ok", "bad");
+            btn.disabled = false;
+            busy = false;
+          }, 900);
+        };
+
+        return {
+          el,
+          name,
+          tag,
+          dot,
+          stats,
+          img,
+          link,
+          sel,
+          applyCodecVisibility,
+          lastFrames: 0,
+          lastTime: Date.now(),
+          lastSrc: "",
+          placeholder: null,
+          btn,
+        };
+      }
+
+      function updateCard(c, a) {
+        c.name.textContent = a.id;
+        c.dot.className = "dot " + (a.alive ? "ok" : "off");
+        const cur = a.current || {};
+        c.tag.textContent =
+          (cur.codec || "?") +
+          (cur.encoder ? "/" + cur.encoder : "") +
+          (a.ctrl_connected ? " 🖱" : "");
+        c.link.href = `/rdp/viewer?agent_id=${encodeURIComponent(a.id)}`;
+
+        const wantSrc =
+          cur.codec === "h264"
+            ? `__h264__`
+            : `/stream/mjpeg/${encodeURIComponent(a.id)}`;
+        if (c.lastSrc !== wantSrc) {
+          if (cur.codec === "h264") {
+            c.img.removeAttribute("src");
+            c.img.style.display = "none";
+            if (!c.placeholder) {
+              c.placeholder = document.createElement("div");
+              c.placeholder.className = "ph";
+              c.placeholder.textContent = "H.264 → клик для просмотра";
+              c.img.parentNode.appendChild(c.placeholder);
+            }
+          } else {
+            if (c.placeholder) {
+              c.placeholder.remove();
+              c.placeholder = null;
+            }
+            c.img.style.display = "";
+            c.img.src = wantSrc + `?t=${Date.now()}`;
+          }
+          c.lastSrc = wantSrc;
+        }
+
+        const t = a.target || {};
+        const focusedHere =
+          document.activeElement &&
+          document.activeElement.closest(".card") === c.el;
+        if (!focusedHere && !c.btn.disabled) {
+          c.sel("codec").value = t.codec || "mjpeg";
+          c.sel("encoder").value = t.encoder || "cpu";
+          c.sel("bitrate").value = t.bitrate || "4M";
+          c.sel("fps").value = t.fps || 30;
+          c.sel("mjpeg_q").value = t.mjpeg_q || 4;
+          c.applyCodecVisibility();
+        }
+
+        const dt = (Date.now() - c.lastTime) / 1000;
+        const total = (a.mjpeg_frames || 0) + (a.h264_keyframes || 0);
+        const df = total - c.lastFrames;
+        const rate = dt > 0 ? (df / dt).toFixed(1) : "0.0";
+        c.lastFrames = total;
+        c.lastTime = Date.now();
+        c.stats.textContent = `${rate}/s · uptime ${a.uptime_s}s`;
+      }
+
+      async function refresh() {
+        let data;
+        try {
+          data = await apiGet("/agents");
+        } catch {
+          return;
+        }
+        const grid = data.agents.length ? ensureGrid() : null;
+        const ids = new Set(data.agents.map((a) => a.id));
+        for (const [id, c] of cards) {
+          if (!ids.has(id)) {
+            c.el.remove();
+            cards.delete(id);
+          }
+        }
+        if (!data.agents.length) {
+          if (!document.getElementById("empty")) {
+            document.getElementById("root").innerHTML =
+              '<div class="empty" id="empty">Нет подключённых агентов.</div>';
+          }
+          return;
+        }
+        for (const a of data.agents) {
+          let c = cards.get(a.id);
+          if (!c) {
+            c = makeCard(a);
+            grid.appendChild(c.el);
+            cards.set(a.id, c);
+          }
+          updateCard(c, a);
+        }
+      }
+      refresh();
+      setInterval(refresh, 2000);
+    </script>
+  </body>
+</html>
