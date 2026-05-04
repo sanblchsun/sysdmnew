@@ -273,18 +273,23 @@ async def check_update(
 @router.get("/download")
 async def download_agent_build(
     build: str,
+    uuid: str,
+    token: str,
     agent: Agent = Depends(get_agent_by_token),
 ):
     """
     Защищённая загрузка билда.
     Доступна только агенту с валидным uuid+token.
     """
+    logger.info(f"=== DOWNLOAD START ===")
+    logger.info(f"Download request - Build: {build}, Agent UUID: {agent.uuid}")
 
     filename = f"agent_universal_{build}.exe"
 
     base_path = Path("builder") / "dist" / "agents"
     file_path = base_path / filename
 
+    logger.info(f"Looking for file: {file_path}")
     if not file_path.exists():
         logger.error(f"Build file not found (download): {file_path}")
         raise HTTPException(status_code=404, detail="Build file not found")
