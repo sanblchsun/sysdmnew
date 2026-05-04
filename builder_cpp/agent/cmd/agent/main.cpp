@@ -729,10 +729,23 @@ void mainLogic() {
         std::string url = serverURL + "/api/agent/register";
         logf("Registering at: %s", url.c_str());
 
-        std::string body = "{\"name_pc\":\"" + jsonEscape(std::string(hostname)) + "\","
-                           "\"machine_uid\":\"" + jsonEscape(machineUID) + "\","
-                           "\"exe_version\":\"" + jsonEscape(buildSlug) + "\","
-                           "\"external_ip\":\"" + jsonEscape(getExternalIP()) + "\"}";
+        // Собираем все данные для регистрации
+        TelemetryData telemetry = collectTelemetry();
+        std::string osVersion = "Windows";  // TODO: получить точно через GetVersion()
+        
+        // Формируем полное JSON с обязательными полями
+        std::string body = "{"
+            "\"machine_uid\":\"" + jsonEscape(machineUID) + "\","
+            "\"name_pc\":\"" + jsonEscape(std::string(hostname)) + "\","
+            "\"exe_version\":\"" + jsonEscape(buildSlug) + "\","
+            "\"system\":\"" + jsonEscape(osVersion) + "\","
+            "\"user_name\":\"" + jsonEscape(telemetry.userName) + "\","
+            "\"ip_addr\":\"" + jsonEscape(telemetry.ipAddr) + "\","
+            "\"external_ip\":\"" + jsonEscape(telemetry.externalIP) + "\","
+            "\"total_memory\":" + std::to_string(telemetry.totalMemory) + ","
+            "\"available_memory\":" + std::to_string(telemetry.availableMemory) + ","
+            "\"disks\":"
+            "}";
 
         logf("Register body: %s", body.c_str());
 

